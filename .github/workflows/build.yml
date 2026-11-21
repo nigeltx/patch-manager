@@ -1,0 +1,62 @@
+name: Build Windows installer
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller pytest
+
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q
+
+      - name: Version
+        id: ver
+        shell: bash
+        run: echo "v=$(python -c 'import patchmgr; print(patchmgr.__version__)')" >> "$GITHUB_OUTPUT"
+
+      - name: Build app
+        run: pyinstaller packaging/patchmgr.spec --noconfirm
+
+      - name: Smoke test (the app starts and imports everything)
+        shell: bash
+        run: |
+          ./dist/PatchManager/PatchManager.exe &
+          sleep 15
+          tasklist | grep -i PatchManager
+          taskkill //IM PatchManager.exe //F
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc "/DMyAppVersion=${{ steps.ver.outputs.v }}" packaging\installer.iss
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.v }}-build${{ github.run_number }}
+          name: Patch Manager ${{ steps.ver.outputs.v }} (build ${{ github.run_number }})
+          body_path: RELEASE_NOTES.txt
+          files: dist-installer/*.exe
+          make_latest: true

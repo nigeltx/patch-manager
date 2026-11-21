@@ -1,0 +1,10 @@
+Patch Manager 0.3.3 — milestones 1 and 2 (Library, Audition, Syntakt). First version as an installer.
+
+Download the PatchManager-Setup .exe below and run it. It installs for your user only (no admin prompt)
+and needs no Python. Windows may warn that the publisher is unknown: choose "More info" then "Run anyway".
+
+Same app as the 0.3.3 that ran from run_patch_manager.bat — your library, ratings, tags, notes and crates
+are in %LOCALAPPDATA%\PatchManager and carry straight over. The old Python environment in
+%LOCALAPPDATA%\PatchManager\venv is no longer used and can be deleted.
+
+See README.txt in the repo for how to use it.

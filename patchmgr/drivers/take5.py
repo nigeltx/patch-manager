@@ -4,10 +4,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ..library.formats import T5_EDIT, T5_EDIT_LEN, T5_ID, T5_NAME_AT, T5_PROGRAM, t5_name, t5_payload, unpack_ms
+from ..library.formats import (T5_EDIT, T5_EDIT_LEN, T5_ID, T5_NAME_AT, T5_PROG_LEN, T5_PROGRAM, place, read_take5,
+                               t5_name, t5_payload, unpack_ms)
 
 INQUIRY = [0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7]
 REQ_EDIT = [0xF0, 0x01, 0x35, 0x06, 0xF7]
+ALL_BANKS = range(1, 33)            # 1–16 user banks U1–U16, 17–32 factory banks F1–F16 (bytes 0–31)
+
+
+def req_program(bank, prog):
+    """Request Program Dump: bank 1–32 (17–32 are the factory banks), program 1–16."""
+    return [0xF0, 0x01, 0x35, 0x05, bank - 1, prog - 1, 0xF7]
+
+
+def is_program(bank, prog):
+    def test(m):
+        return m.startswith(T5_ID) and len(m) == T5_PROG_LEN and m[3] == T5_PROGRAM and m[4] == bank - 1 \
+            and m[5] == prog - 1
+    return test
 
 
 @dataclass
@@ -95,3 +109,27 @@ class Take5:
         """Read the edit buffer back and compare with what was sent (used by the M2 self-check)."""
         e = self.dev.request(REQ_EDIT, is_edit_dump, 2.0)
         return e is not None and t5_payload(e) == t5_payload(data)
+
+    # ---------------------------------------------------------------- reading slots (M3: backups, Initialize, green rows)
+    def read_program(self, bank, prog, timeout=2.0):
+        m = self.dev.request(req_program(bank, prog), is_program(bank, prog), timeout)
+        if m is None:                              # one retry: a reply can be lost while the synth is busy
+            m = self.dev.request(req_program(bank, prog), is_program(bank, prog), timeout)
+        return m
+
+    def read_slots(self, banks=ALL_BANKS, progress=None, cancelled=None):
+        """Read every program in the given banks. -> list of SlotRead. Raises RuntimeError if the Take 5 stops answering."""
+        from ..library.factory import SlotRead
+        out, todo = [], [(b, p) for b in banks for p in range(1, 17)]
+        for i, (b, p) in enumerate(todo):
+            if cancelled and cancelled():
+                break
+            m = self.read_program(b, p)
+            if m is None:
+                raise RuntimeError(f"The Take 5 did not send program {place('take5', b, p)} — check its USB cable and "
+                                   "that GLOBAL 21 MIDI SysEx is On")
+            pt = read_take5(m, "slot.syx")[0]
+            out.append(SlotRead("take5", b, p, place("take5", b, p), pt.name, m, pt.sound_hash))
+            if progress:
+                progress(i + 1, len(todo), f"{place('take5', b, p)} {pt.name}")
+        return out

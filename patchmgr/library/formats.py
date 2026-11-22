@@ -33,6 +33,7 @@ class Patch:
     tags: list[str] = field(default_factory=list)     # tags found in the file itself
     samples: list[str] = field(default_factory=list)  # Deluge sample paths referenced
     kind: str = "sound"             # "sound" | "project" | "backup"
+    blank: bool = False             # an init / blank starting sound ("Init Preset"): never factory, slot counts as free
 
 
 def sha(b: bytes) -> str:
@@ -131,8 +132,41 @@ S37_LEN, S37_ALL_LEN = 756, 203800
 S37_DATA_FROM = 7                    # F0 04 0C type ver slotH slotL | data … | checksum(3) F7
 
 
+S37_RECORD = 796                     # ALL PRESETS: 7-byte header, 256 records of 796 bytes, then 00 01 F7 (test 18)
+S37_RECORD_DATA = 748                # a record = the 748 bytes after a single preset's header (data + checksum), then zeros
+S37_NAME_AT, S37_NAME_GROUPS = 23, 10
+S37_BLANK_NAMES = {"init preset"}
+
+
 def s37_sound(msg: bytes) -> bytes:
     return msg[S37_DATA_FROM:-4]
+
+
+def s37_name(msg: bytes) -> str:
+    """The preset's own name: 3-byte groups each holding two characters as a 16-bit word
+    ((b0 & 0x0F) << 12 | b1 << 6 | b2), starting at byte 23 of a single-preset message."""
+    out = bytearray()
+    for i in range(S37_NAME_AT, S37_NAME_AT + 3 * S37_NAME_GROUPS, 3):
+        if i + 2 >= len(msg):
+            break
+        w = ((msg[i] & 0x0F) << 12) | ((msg[i + 1] & 0x3F) << 6) | (msg[i + 2] & 0x3F)
+        out += bytes([w >> 8, w & 0xFF])
+    text = out.split(b"\x00")[0].decode("latin-1", "replace")
+    return "".join(c for c in text if c.isprintable()).strip()
+
+
+def s37_split_all(data: bytes) -> list[bytes]:
+    """An ALL PRESETS dump → 256 single stored-preset messages (F0 04 0C 02 07 hi lo … F7), slot 0 = 1-1.
+    Message byte 14 is 60 in every single dump but 00 in most records; the checksum ignores it, so it is set to 60
+    and a slot split from a backup is byte-for-byte the same as a CUR PRESET dump of that slot (bench test 18)."""
+    if len(data) != S37_ALL_LEN or not data.startswith(S37_ID + bytes([S37_ALL])):
+        raise FormatError("not a Sub 37 ALL PRESETS dump (203,800 bytes starting F0 04 0C 01)")
+    out = []
+    for n in range(256):
+        rec = bytearray(data[7 + S37_RECORD * n: 7 + S37_RECORD * n + S37_RECORD_DATA])
+        rec[7] = 0x60
+        out.append(bytes([0xF0, 0x04, 0x0C, S37_PRESET, data[4], n >> 7, n & 0x7F]) + bytes(rec) + b"\xF7")
+    return out
 
 
 NUM_PREFIX = re.compile(r"^\s*(\d{1,4})\s*[-_. ]\s*")
@@ -146,7 +180,13 @@ def name_from_file(path: str) -> str:
 def read_sub37(data: bytes, path: str) -> list[Patch]:
     if len(data) == S37_ALL_LEN and data.startswith(S37_ID + bytes([S37_ALL])):
         stem = name_from_file(path)
-        return [Patch("sub37", stem, data, sha(b"sub37all" + data), "all presets", kind="backup")]
+        out = []
+        for n, m in enumerate(s37_split_all(data)):
+            name = s37_name(m) or f"{stem} {n // 16 + 1}-{n % 16 + 1}"
+            out.append(Patch("sub37", name, m, sha(b"sub37" + s37_sound(m)), "stored preset", n,
+                             bank=n // 16 + 1, slot=n % 16 + 1, blank=name.lower() in S37_BLANK_NAMES))
+        out.append(Patch("sub37", stem, data, sha(b"sub37all" + data), "all presets", 256, kind="backup"))
+        return out
     msgs = split_sysex(data)
     out = []
     stem = name_from_file(path)
@@ -162,9 +202,11 @@ def read_sub37(data: bytes, path: str) -> list[Patch]:
             slot = n
         name = stem if len(msgs) == 1 else f"{stem} #{i + 1}"
         fmt = "preset" if m[3] == S37_BUFFER else "stored preset"
+        own = s37_name(m)
         out.append(Patch("sub37", name, m, sha(b"sub37" + s37_sound(m)), fmt, i,
                          bank=(slot // 16 + 1) if slot is not None else None,
-                         slot=(slot % 16 + 1) if slot is not None else None))
+                         slot=(slot % 16 + 1) if slot is not None else None,
+                         blank=own.lower() in S37_BLANK_NAMES))
     return out
 
 
@@ -211,6 +253,33 @@ def read_elektron(data: bytes, path: str) -> list[Patch]:
     if ftype == "Project":
         return [Patch("syntakt", name_from_file(path), data, sha(b"syntaktprj" + body), "stprj", kind="project")]
     raise FormatError(f"an Elektron file of type '{ftype}', not a sound or project")
+
+
+def make_stsnd(name: str, payload: bytes) -> bytes:
+    """A .stsnd file for a sound read from the Syntakt's pool: the payload unchanged, named in the manifest, so it
+    has the same identity as the same sound in a pack (spec 4.3)."""
+    b = io.BytesIO()
+    with zipfile.ZipFile(b, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("manifest.json", json.dumps({"FileType": "Sound", "Payload": name, "ProductType": "Syntakt",
+                                                "MetaInfo": {"Tags": []}}, indent=1))
+        z.writestr(name, payload)
+    return b.getvalue()
+
+
+# ---------------------------------------------------------------- slots on a synth
+
+SYNTAKT_BANKS = "ABCDEFGH"
+
+
+def place(synth: str, bank: int, slot: int, path: str | None = None) -> str:
+    """How the synth's own panel names a slot: Take 5 U3-07 or F12-01, Sub 37 10-5, Syntakt A:002, Deluge a file."""
+    if synth == "take5":
+        return f"U{bank}-{slot:02d}" if bank <= 16 else f"F{bank - 16}-{slot:02d}"
+    if synth == "sub37":
+        return f"{bank}-{slot}"
+    if synth == "syntakt":
+        return f"{SYNTAKT_BANKS[bank - 1]}:{slot:03d}"
+    return path or f"{bank}-{slot}"
 
 
 # ---------------------------------------------------------------- dispatch

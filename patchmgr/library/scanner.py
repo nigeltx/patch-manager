@@ -61,6 +61,8 @@ def find_deluge_cards() -> list[str]:
 
 def classify(rel_parts: list[str]):
     """-> (synth, type, pack) from the path below the library root."""
+    if rel_parts[:2] == [APP_FOLDER, "Backups"] and len(rel_parts) >= 5:
+        return SYNTH_FOLDERS.get(rel_parts[2].lower()), "backup", rel_parts[3]
     synth = SYNTH_FOLDERS.get(rel_parts[0].lower()) if rel_parts else None
     if synth is None:
         return None, "unsorted", None
@@ -97,8 +99,14 @@ class Scanner:
         for dirpath, dirnames, filenames in os.walk(root):
             rel_dir = os.path.relpath(dirpath, root)
             parts = [] if rel_dir == "." else rel_dir.split(os.sep)
-            dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d != "System Volume Information"
-                                 and not (kind == "library" and not parts and d == APP_FOLDER))
+            dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d != "System Volume Information")
+            if kind == "library" and parts[:1] == [APP_FOLDER]:
+                # only the dated backup folders under _Patch Manager\Backups\<synth> are read
+                keep = {1: {"Backups"}}.get(len(parts))
+                if keep is not None:
+                    dirnames[:] = [d for d in dirnames if d in keep]
+                if len(parts) < 4:
+                    filenames = []
             if kind == "card" and (not parts and True):
                 dirnames[:] = [d for d in dirnames if d.upper() == "SYNTHS"]
             for f in sorted(filenames):
@@ -168,10 +176,13 @@ class Scanner:
                 if pid:
                     pid = pid[0]
                 else:
-                    cur = con.execute("INSERT INTO patch(synth, name, hash, data, fmt, kind, first_seen) VALUES(?,?,?,?,?,?,?)",
-                                      (p.synth, p.name, p.sound_hash, p.data, p.fmt, p.kind, time.time()))
+                    cur = con.execute("INSERT INTO patch(synth, name, hash, data, fmt, kind, first_seen, blank) "
+                                      "VALUES(?,?,?,?,?,?,?,?)",
+                                      (p.synth, p.name, p.sound_hash, p.data, p.fmt, p.kind, time.time(), int(p.blank)))
                     pid = cur.lastrowid
                     self.p.added += 1
+                if p.blank:
+                    con.execute("UPDATE patch SET blank=1 WHERE id=?", (pid,))
                 con.execute("INSERT OR REPLACE INTO patch_origin VALUES(?,?,?,?,?,?)",
                             (pid, fid, p.index, p.name, p.bank, p.slot))
                 for t in p.tags:

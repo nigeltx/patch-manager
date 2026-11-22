@@ -130,6 +130,23 @@ class Device:
             self.waiters.remove(w)
         return w.reply
 
+    def wait_for(self, test, timeout, progress=None, cancelled=None):
+        """Wait, without sending anything, for a SysEx message the synth sends by itself (a dump started on its
+        panel). progress(bytes so far) is called about twice a second while a long message arrives."""
+        w = Waiter(test, threading.Event())
+        self.waiters.append(w)
+        end = time.time() + timeout
+        try:
+            while not w.event.wait(0.5):
+                if progress:
+                    progress(len(self.re.pending))
+                if time.time() > end or (cancelled and cancelled()):
+                    break
+        finally:
+            if w in self.waiters:
+                self.waiters.remove(w)
+        return w.reply
+
     def close(self):
         for p in (self.inp, self.out):
             if p is not None:

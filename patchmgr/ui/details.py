@@ -58,6 +58,8 @@ class Details(QScrollArea):
         v.addWidget(self.title); v.addWidget(self.sub)
 
         self.aud_slot = QVBoxLayout(); v.addLayout(self.aud_slot)
+        self.onsynth = QLabel(""); self.onsynth.setWordWrap(True); self.onsynth.setTextFormat(Qt.RichText)
+        self.onsynth.setStyleSheet("font-size:12px; margin-top:6px;"); v.addWidget(self.onsynth)
 
         v.addWidget(heading("Rating  (keys 1–5, 0 clears)"))
         sr = QHBoxLayout(); self.star_btns = []
@@ -113,6 +115,7 @@ class Details(QScrollArea):
         if not on:
             self.title.setText("Select a patch"); self.sub.setText(""); self.tags.clear(); self.starter.clear()
             self.notes.setText(""); self.prev_list.clear(); self.where.setText(""); self.heard.setText("")
+            self.onsynth.setText("")
             self._fill_crates(); return
         h = row["hash"]
         self.title.setText(row["name"])
@@ -137,12 +140,37 @@ class Details(QScrollArea):
                 b = o["bank"]
                 pos = f" · bank {b} prog {o['slot']}" if b <= 16 else f" · factory bank {b - 16} prog {o['slot']}"
             lines.append(f"<b>{TYPE_LABEL.get(o['type'], o['type'])}</b> {o['rel']}{pos}")
+        self.onsynth.setText(self._onsynth_text(row))
         self.where.setText("<br>".join(lines) or "<i>Its file is gone, but the patch and what you added are kept.</i>")
         if m and m["last_heard"]:
             self.heard.setText(f"Last heard {time.strftime('%d %b %Y %H:%M', time.localtime(m['last_heard']))} · "
                                f"{m['times_heard']} times")
         else:
             self.heard.setText("Never heard")
+
+    def _onsynth_text(self, row):
+        parts = []
+        if row.get("is_factory"):
+            parts.append("<span style='background:#fde7c7; color:#7c2d12; font-weight:700;'>&nbsp;F&nbsp;</span> "
+                         "A factory preset — its slot on the synth is locked")
+        elif row.get("blank"):
+            parts.append("A blank starting sound (init preset) — a slot holding it counts as free")
+        slots = self.db.slots_of(row["hash"])
+        if slots:
+            by = {}
+            for s_ in slots:
+                by.setdefault(s_["synth"], []).append(s_)
+            for syn, ss in by.items():
+                when = max(x["read_at"] or 0 for x in ss)
+                names = ", ".join(x["place"] or "" for x in ss[:12]) + (f" and {len(ss) - 12} more" if len(ss) > 12 else "")
+                parts.append(f"<span style='background:#d8f0e4; color:#065f46; font-weight:600;'>&nbsp;On the "
+                             f"{SYNTH_LABEL.get(syn, syn)}&nbsp;</span> {names} "
+                             f"<span style='color:#6b7280;'>— as read {time.strftime('%d %b %H:%M', time.localtime(when))}</span>")
+        else:
+            init = self.db.last_init(row["synth"]) if row["synth"] in SYNTH_LABEL else None
+            parts.append("Not on the synth" + (f" — as of the last read" if init else
+                                               " as far as the app knows — run Initialize factory presets from the Synths menu"))
+        return "<br>".join(parts)
 
     def _show_stars(self, n):
         for i, b in enumerate(self.star_btns, 1):

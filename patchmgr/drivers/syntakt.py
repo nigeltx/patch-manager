@@ -236,3 +236,35 @@ class Syntakt:
 
     def put_back(self):
         return False
+
+    # ---------------------------------------------------------------- reading the sound pool (M3)
+    def read_banks(self, letters="A", progress=None, cancelled=None, known=None):
+        """Read every sound in the given banks. known: {(bank, slot): (info, hash, name)} from the last read — a slot
+        whose name and size are unchanged is not read again. -> list of SlotRead."""
+        from ..library.factory import SlotRead
+        from ..library.formats import SYNTAKT_BANKS, make_stsnd, place, read_elektron
+        listed = []
+        with self.lock:
+            for letter in letters:
+                b = SYNTAKT_BANKS.index(letter) + 1
+                for e in self.list(f"/soundbanks/{letter}"):
+                    if e.get("slot"):
+                        listed.append((b, letter, e))
+        out = []
+        for i, (b, letter, e) in enumerate(listed):
+            if cancelled and cancelled():
+                break
+            info = f"{e['name']}|{e.get('size', 0)}"
+            old = (known or {}).get((b, e["slot"]))
+            if old and old[0] == info:
+                out.append(SlotRead("syntakt", b, e["slot"], place("syntakt", b, e["slot"]), old[2], b"", old[1], info=info))
+            else:
+                with self.lock:
+                    payload = self.read(f"/soundbanks/{letter}/{e['slot']}")
+                data = make_stsnd(e["name"], payload)
+                pt = read_elektron(data, "slot.stsnd")[0]
+                out.append(SlotRead("syntakt", b, e["slot"], place("syntakt", b, e["slot"]), e["name"], data,
+                                    pt.sound_hash, info=info))
+            if progress:
+                progress(i + 1, len(listed), f"{letter}:{e['slot']:03d} {e['name']}")
+        return out

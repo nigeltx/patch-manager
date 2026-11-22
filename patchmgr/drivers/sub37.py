@@ -3,7 +3,7 @@ stores nothing. A stored-preset dump (type 02) is turned into a buffer dump befo
 only the data, so changing the type byte is safe (bench test 13)."""
 from __future__ import annotations
 
-from ..library.formats import S37_BUFFER, S37_ID, S37_LEN, S37_PRESET
+from ..library.formats import S37_ALL, S37_ALL_LEN, S37_BUFFER, S37_ID, S37_LEN, S37_PRESET, place, read_sub37
 
 INQUIRY = [0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7]
 
@@ -51,3 +51,21 @@ class Sub37:
 
     def put_back(self):
         return False
+
+    # ---------------------------------------------------------------- reading slots (M3)
+    def wait_all_presets(self, timeout=600, progress=None, cancelled=None):
+        """Wait for you to press SEND on ALL PRESETS (SYSEX page). -> the 203,800-byte dump, or None."""
+        def test(m):
+            return m.startswith(S37_ID) and len(m) == S37_ALL_LEN and m[3] == S37_ALL
+        return self.dev.wait_for(test, timeout, progress, cancelled)
+
+
+def slots_from_all(data: bytes):
+    """ALL PRESETS → 256 SlotRead (bench test 18)."""
+    from ..library.factory import SlotRead
+    out = []
+    for p in read_sub37(data, "ALL PRESETS.syx"):
+        if p.kind == "sound":
+            out.append(SlotRead("sub37", p.bank, p.slot, place("sub37", p.bank, p.slot), p.name, p.data, p.sound_hash,
+                                blank=p.blank))
+    return out

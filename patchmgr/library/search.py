@@ -4,9 +4,11 @@ from __future__ import annotations
 import re
 import shlex
 
+from .db import FACTORY_SQL
+
 SYNTH_ALIASES = {"take5": "take5", "take 5": "take5", "t5": "take5", "sub37": "sub37", "sub 37": "sub37",
                  "s37": "sub37", "moog": "sub37", "deluge": "deluge", "syntakt": "syntakt", "st": "syntakt"}
-STATES = {"unheard", "heard", "onsynth", "preview", "dupe", "unrated", "problem"}
+STATES = {"unheard", "heard", "onsynth", "preview", "dupe", "unrated", "problem", "factory", "blank"}
 
 BASE = """
 SELECT p.id, p.hash, p.synth, p.name, p.fmt, p.kind,
@@ -20,7 +22,10 @@ SELECT p.id, p.hash, p.synth, p.name, p.fmt, p.kind,
          JOIN tag t ON t.id=pt.tag_id WHERE pt.hash=p.hash) AS tags,
        m.rating, m.notes, m.last_heard,
        EXISTS(SELECT 1 FROM preview pv WHERE pv.hash=p.hash) AS has_preview,
-       EXISTS(SELECT 1 FROM slot_state ss WHERE ss.hash=p.hash) AS on_synth
+       EXISTS(SELECT 1 FROM slot_state ss WHERE ss.hash=p.hash) AS on_synth,
+       (SELECT GROUP_CONCAT(ss.place, ', ') FROM slot_state ss WHERE ss.hash=p.hash) AS places,
+       """ + FACTORY_SQL + """ AS is_factory,
+       p.blank
 FROM patch p LEFT JOIN meta m ON m.hash=p.hash
 """
 
@@ -97,6 +102,8 @@ def build(text: str, scope: dict | None = None) -> tuple[str, list]:
                 "dupe": "(SELECT COUNT(*) FROM patch_origin po WHERE po.patch_id=p.id) > 1",
                 "unrated": "m.rating IS NULL",
                 "problem": "0",
+                "factory": FACTORY_SQL,
+                "blank": "p.blank = 1",
             }[key]
         else:
             cond = ("(p.name LIKE ? OR COALESCE(m.notes,'') LIKE ? OR EXISTS(SELECT 1 FROM patch_origin po JOIN "

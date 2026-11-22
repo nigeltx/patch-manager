@@ -41,7 +41,23 @@ CREATE TABLE IF NOT EXISTS slot_state (synth TEXT, bank INTEGER, slot INTEGER, h
 CREATE TABLE IF NOT EXISTS journal (op_id INTEGER PRIMARY KEY, time REAL, synth TEXT, bank INTEGER, slot INTEGER,
     before_hash TEXT, after_hash TEXT, backup_path TEXT, step TEXT, status TEXT);
 CREATE TABLE IF NOT EXISTS setting (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS synth_init (id INTEGER PRIMARY KEY, synth TEXT NOT NULL, model TEXT, firmware TEXT,
+    run_at REAL, slots_read INTEGER, marked_factory INTEGER, backup TEXT);
 """
+
+# Columns added after the first release; added to an existing library.db when it is opened.
+MIGRATIONS = {
+    "patch": [("factory", "TEXT"), ("blank", "INTEGER NOT NULL DEFAULT 0")],
+    "slot_state": [("place", "TEXT"), ("name", "TEXT"), ("how", "TEXT"), ("info", "TEXT")],
+}
+
+# Banks that hold factory presets, as the synth's panel numbers them (spec 4.7, 5.5). Take 5: U = user, F = factory.
+FACTORY_BANKS_DEFAULT = {"take5": "F1-F16", "sub37": "1-9", "syntakt": "A", "deluge": ""}
+
+# A patch is factory when Initialize marked it, or when it is in a maker's Factory folder — never if it is blank.
+FACTORY_SQL = ("(p.blank = 0 AND COALESCE(p.factory, '') != 'no' AND (p.factory = 'read' OR EXISTS("
+               "SELECT 1 FROM patch_origin po JOIN source_file sf ON sf.id=po.file_id JOIN source s ON s.id=sf.source_id "
+               "WHERE po.patch_id=p.id AND s.type='factory')))")
 
 STARTER_TAGS = {
     "role": ["bass", "lead", "pad", "pluck", "keys", "seq", "fx", "drum"],
@@ -63,6 +79,11 @@ class DB:
         self.con = sqlite3.connect(self.path, check_same_thread=False)
         self.con.row_factory = sqlite3.Row
         self.con.executescript(SCHEMA)
+        for table, cols in MIGRATIONS.items():
+            have = {r[1] for r in self.con.execute(f"PRAGMA table_info({table})")}
+            for name, decl in cols:
+                if name not in have:
+                    self.con.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
         for grp, names in STARTER_TAGS.items():
             for n in names:
                 self.con.execute("INSERT OR IGNORE INTO tag(name, grp) VALUES(?, ?)", (n, grp))
@@ -177,3 +198,62 @@ class DB:
     def problems(self):
         return self.q("SELECT sf.path, sf.rel, sf.problem, s.synth FROM source_file sf JOIN source s ON s.id=sf.source_id "
                       "WHERE sf.status='problem' ORDER BY sf.rel")
+
+    # ---------------------------------------------------------------- what is on each synth (spec 4.8)
+    def set_slots(self, synth, rows, how="read", replace_all=False, when=None):
+        """rows: dicts with bank, slot, place, name, hash, info. replace_all forgets slots not in rows (a full read)."""
+        when = when or time.time()
+        if replace_all:
+            self.con.execute("DELETE FROM slot_state WHERE synth=?", (synth,))
+        self.con.executemany(
+            "INSERT OR REPLACE INTO slot_state(synth, bank, slot, hash, read_at, place, name, how, info) "
+            "VALUES(?,?,?,?,?,?,?,?,?)",
+            [(synth, r["bank"], r["slot"], r["hash"], when, r.get("place"), r.get("name"), how, r.get("info"))
+             for r in rows])
+        self.con.commit()
+
+    def clear_slots(self, synth, keys):
+        self.con.executemany("DELETE FROM slot_state WHERE synth=? AND bank=? AND slot=?", [(synth, b, s) for b, s in keys])
+        self.con.commit()
+
+    def slot_rows(self, synth):
+        return self.q("SELECT * FROM slot_state WHERE synth=? ORDER BY bank, slot", (synth,))
+
+    def slots_of(self, h):
+        return self.q("SELECT synth, bank, slot, place, name, read_at, how FROM slot_state WHERE hash=? "
+                      "ORDER BY synth, bank, slot", (h,))
+
+    # ---------------------------------------------------------------- factory presets (spec 4.7)
+    def factory_banks(self, synth):
+        return self.setting(f"factory_banks_{synth}", FACTORY_BANKS_DEFAULT.get(synth, ""))
+
+    def is_factory(self, patch_id):
+        return bool(self.one(f"SELECT {FACTORY_SQL} FROM patch p WHERE p.id=?", (patch_id,)))
+
+    def set_factory(self, hashes, value):
+        """value: 'read' (Initialize marked it), 'no' (you unticked it), or None (back to the maker's-set rule)."""
+        self.con.executemany("UPDATE patch SET factory=? WHERE hash=?", [(value, h) for h in hashes])
+        self.con.commit()
+
+    def set_blank(self, hashes):
+        self.con.executemany("UPDATE patch SET blank=1 WHERE hash=?", [(h,) for h in hashes])
+        self.con.commit()
+
+    def maker_hashes(self, synth):
+        return {r[0] for r in self.q(
+            "SELECT DISTINCT p.hash FROM patch p JOIN patch_origin po ON po.patch_id=p.id JOIN source_file sf "
+            "ON sf.id=po.file_id JOIN source s ON s.id=sf.source_id WHERE p.synth=? AND s.type='factory'", (synth,))}
+
+    def maker_pack(self, h):
+        return self.one("SELECT COALESCE(NULLIF(s.pack, ''), 'Factory') FROM patch p JOIN patch_origin po ON po.patch_id=p.id "
+                        "JOIN source_file sf ON sf.id=po.file_id JOIN source s ON s.id=sf.source_id "
+                        "WHERE p.hash=? AND s.type='factory' LIMIT 1", (h,))
+
+    def record_init(self, synth, model, firmware, slots_read, marked, backup):
+        self.con.execute("INSERT INTO synth_init(synth, model, firmware, run_at, slots_read, marked_factory, backup) "
+                         "VALUES(?,?,?,?,?,?,?)", (synth, model, firmware, time.time(), slots_read, marked, backup))
+        self.con.commit()
+
+    def last_init(self, synth):
+        r = self.q("SELECT * FROM synth_init WHERE synth=? ORDER BY run_at DESC LIMIT 1", (synth,))
+        return r[0] if r else None

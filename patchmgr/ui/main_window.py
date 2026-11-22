@@ -5,10 +5,11 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 from PySide6.QtCore import QObject, QThread, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QKeySequence, QShortcut
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QPushButton, QFileDialog, QHBoxLayout, QHeaderView, QInputDialog,
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QFrame, QPushButton, QToolButton, QFileDialog, QHBoxLayout, QHeaderView, QInputDialog,
                                QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox, QProgressBar, QSplitter,
                                QStackedWidget, QTableView, QTableWidget, QTableWidgetItem, QToolBar, QTreeWidget,
                                QTreeWidgetItem, QVBoxLayout, QWidget)
@@ -21,17 +22,19 @@ from ..library.scanner import Scanner, find_deluge_cards, find_library_root
 from .audition import AuditionPanel
 from .details import Details
 from .session import Session
+from .synths import MODES, READ_SYNTHS, ReadDialog, ReadWorker
 from .models import TYPE_LABEL, PatchModel, SortProxy
 
 APP = "Patch Manager"
 from patchmgr import __version__
-VERSION = f"{__version__} (M2 Audition + Syntakt)"
+VERSION = f"{__version__} (M3 Backups and factory presets)"
 SYNTH_ORDER = ["take5", "sub37", "deluge", "syntakt"]
 HELP = """<b>Search</b> — type words to match names, packs and notes, and add filters:<br>
 <code>synth:take5</code> &nbsp; <code>synth:sub37</code> &nbsp; <code>synth:deluge</code> &nbsp; <code>synth:syntakt</code><br>
 <code>tag:pad tag:dark</code> (all must match) &nbsp; <code>rating:&gt;=4</code> &nbsp; <code>rating:0</code><br>
 <code>source:paid</code> / free / factory / unsorted / card &nbsp; <code>pack:audiotent</code> &nbsp; <code>crate:keepers</code><br>
-<code>unheard</code> &nbsp; <code>heard</code> &nbsp; <code>preview</code> &nbsp; <code>dupe</code> &nbsp; <code>unrated</code><br>
+<code>unheard</code> &nbsp; <code>heard</code> &nbsp; <code>preview</code> &nbsp; <code>dupe</code> &nbsp; <code>unrated</code>
+&nbsp; <code>factory</code> &nbsp; <code>onsynth</code> &nbsp; <code>blank</code><br>
 Put <code>-</code> in front of anything to exclude it: <code>-tag:drum</code>. Use quotes for spaces: <code>pack:"lost clouds"</code>.<br><br>
 <b>Keys</b> — ↑ ↓ move (and load, if that box is ticked) · Enter loads and plays the test phrase · P plays it again ·
 Esc stops · T starts or stops the transport · 1–5 rate the selected patches, 0 clears · Space plays or stops the preview
@@ -79,6 +82,12 @@ class MainWindow(QMainWindow):
         tb.addWidget(self.search)
         a = QAction("Save as smart crate", self); a.triggered.connect(self.save_smart); tb.addAction(a)
         a = QAction("Help", self); a.triggered.connect(lambda: QMessageBox.information(self, "Search and keys", HELP)); tb.addAction(a)
+        self.synths_btn = QToolButton(); self.synths_btn.setText("Synths ▾")
+        self.synths_btn.setPopupMode(QToolButton.InstantPopup)
+        self.synths_menu = QMenu(self); self.synths_menu.aboutToShow.connect(self._fill_synths_menu)
+        self.synths_btn.setMenu(self.synths_menu)
+        self.synths_btn.setToolTip("Initialize factory presets, back up a synth, or refresh what is on it")
+        tb.addWidget(self.synths_btn)
         tb.addSeparator()
         self.pills = {}
         for key, label in (("take5", "Take 5"), ("sub37", "Sub 37"), ("syntakt", "Syntakt"), ("keylab", "KeyLab")):
@@ -105,9 +114,9 @@ class MainWindow(QMainWindow):
         self.table.verticalHeader().setVisible(False); self.table.verticalHeader().setDefaultSectionSize(24)
         self.table.setAlternatingRowColors(True); self.table.setWordWrap(False)
         hh = self.table.horizontalHeader()
-        for c, w in enumerate([26, 240, 64, 190, 90, 150, 72, 52]):
+        for c, w in enumerate([26, 24, 240, 64, 190, 90, 150, 72, 52]):
             self.table.setColumnWidth(c, w)
-        hh.setSectionResizeMode(1, QHeaderView.Stretch); hh.setStretchLastSection(False)
+        hh.setSectionResizeMode(2, QHeaderView.Stretch); hh.setStretchLastSection(False)
         self.table.selectionModel().selectionChanged.connect(self._selected)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._table_menu)
@@ -123,7 +132,19 @@ class MainWindow(QMainWindow):
         self.prob_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.prob_table.verticalHeader().setVisible(False); self.prob_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         pv.addWidget(self.prob_table)
-        self.center = QStackedWidget(); self.center.addWidget(self.table); self.center.addWidget(pw)
+        listw = QWidget(); lv = QVBoxLayout(listw); lv.setContentsMargins(0, 0, 0, 0); lv.setSpacing(4)
+        self.banner = QFrame(); self.banner.setStyleSheet("QFrame{background:#fff7ed; border:1px solid #fdba74; "
+                                                          "border-radius:4px;}")
+        bl = QHBoxLayout(self.banner); bl.setContentsMargins(10, 6, 10, 6)
+        self.banner_lbl = QLabel(""); self.banner_lbl.setWordWrap(True); self.banner_lbl.setStyleSheet("border:none;")
+        bl.addWidget(self.banner_lbl, 1)
+        self.banner_go = QPushButton("Initialize…"); bl.addWidget(self.banner_go)
+        later = QPushButton("Later"); later.clicked.connect(self._banner_later); bl.addWidget(later)
+        self.banner_go.clicked.connect(lambda: self.open_read("init", self.banner_synth))
+        self.banner.hide(); self.banner_synth = None; self.banner_skip = set()
+        lv.addWidget(self.banner); lv.addWidget(self.table)
+        self.center = QStackedWidget(); self.center.addWidget(listw); self.center.addWidget(pw)
+        self.bg_thread = None
 
         # ---------------- details
         self.session = Session(db)
@@ -266,7 +287,7 @@ class MainWindow(QMainWindow):
             it = QTreeWidgetItem([f"{SYNTH_LABEL[syn]}  ({counts.get(syn, 0):,})"]); it.setData(0, Qt.UserRole, {"synth": syn})
             f = it.font(0); f.setBold(True); it.setFont(0, f)
             self.tree.addTopLevelItem(it)
-            for t in ("free", "factory", "paid", "unsorted", "card"):
+            for t in ("free", "factory", "paid", "unsorted", "card", "backup"):
                 rows = [r for r in packs if r["synth"] == syn and r["type"] == t]
                 if not rows:
                     continue
@@ -501,6 +522,10 @@ class MainWindow(QMainWindow):
         label = SYNTH_LABEL[key]
         if p.ok:
             self.status_lbl.setText(f"{label} ready — " + p.lines[0][1])
+            if self.db.last_init(key):
+                self.background_refresh(key)
+            elif key not in self.banner_skip:
+                self._offer_init(key)
         else:
             self.status_lbl.setText(f"{label}: " + next((t for s_, t in p.lines if s_ == "bad"), "check failed"))
             self.show_preflight(key)
@@ -515,8 +540,8 @@ class MainWindow(QMainWindow):
         p = self.preflights.get(key)
         label = SYNTH_LABEL[key]
         if p is None:
-            QMessageBox.information(self, APP, f"The {label} is not connected to the PC. For a patch session, give the PC "
-                                               "the synths (the hub cable now, the sharing switch's button later).")
+            QMessageBox.information(self, APP, f"The {label} is not connected to the PC. Check its USB cable reaches the "
+                                               "hub on the PC and the synth is switched on.")
             return
         icon = {"ok": "✓", "warn": "!", "bad": "✗"}
         text = "<br>".join(f"<b>{icon[s_]}</b> {t}" for s_, t in p.lines)
@@ -537,6 +562,90 @@ class MainWindow(QMainWindow):
             if ok:
                 self.session.set_channel(key, ch)
                 self.status_lbl.setText(f"{label} test phrases now go out on channel {ch}")
+
+    # ================================================================ reading the synths (M3)
+    def _fill_synths_menu(self):
+        m = self.synths_menu; m.clear()
+        for key in READ_SYNTHS:
+            label = SYNTH_LABEL[key]
+            ok = key == "deluge" or self.session.ready(key)
+            init = self.db.last_init(key)
+            sub = m.addMenu(f"{label}" + ("" if ok else "  (not connected)"))
+            for mode in ("init", "backup", "refresh"):
+                a = sub.addAction(MODES[mode] + ("…" if mode != "refresh" else ""),
+                                  lambda k=key, md=mode: self.open_read(md, k))
+                a.setEnabled(ok and (mode != "refresh" or key != "sub37"))
+            sub.addSeparator()
+            when = time.strftime('%d %b %Y', time.localtime(init["run_at"])) if init else None
+            info = sub.addAction(f"Initialized {when}: {init['marked_factory']} factory presets" if init
+                                 else "Not initialized yet")
+            info.setEnabled(False)
+            if key == "deluge":
+                hint = sub.addAction("Reads over the Deluge's own USB cable")
+                hint.setEnabled(False)
+
+    def open_read(self, mode, key):
+        if key is None:
+            return
+        if self.bg_thread is not None:
+            QMessageBox.information(self, APP, "The app is still reading a synth in the background — try again in a "
+                                               "minute.")
+            return
+        if mode != "refresh" and not self.db.setting("library_root"):
+            QMessageBox.warning(self, APP, "Choose the library folder first (Library folder…) — backups are kept in it.")
+            return
+        if key == self.banner_synth:
+            self.banner.hide()
+        dlg = ReadDialog(self, mode, key, self.session, self.db, self.db.setting("library_root"))
+        dlg.exec()
+        self.fill_tree(); self.refresh()
+        rows = self.selected_rows()
+        self.details.show_row(rows[0] if rows else None)
+        self._next_banner()
+
+    def _offer_init(self, key):
+        if self.banner.isVisible() and self.banner_synth != key:
+            return
+        self.banner_synth = key
+        label = SYNTH_LABEL[key]
+        self.banner_lbl.setText(f"<b>The {label} has not been initialized.</b> Initialize factory presets reads it once: "
+                                f"factory presets get an <b>F</b>, and every sound on the {label} shows green.")
+        self.banner.show()
+
+    def _banner_later(self):
+        if self.banner_synth:
+            self.banner_skip.add(self.banner_synth)
+        self.banner.hide(); self._next_banner()
+
+    def _next_banner(self):
+        self.banner_synth = None if not self.banner.isVisible() else self.banner_synth
+        for key in ("take5", "sub37", "syntakt"):
+            if self.session.ready(key) and not self.db.last_init(key) and key not in self.banner_skip:
+                self._offer_init(key); return
+
+    def background_refresh(self, key):
+        """After a synth connects: read what is on it now, quietly, so the green rows are current (spec 4.8)."""
+        if key not in ("take5", "syntakt") or self.bg_thread is not None:
+            return
+        self.bg_thread = QThread(self)
+        self.bg_worker = ReadWorker("refresh", key, self.session, self.db.path, self.db.setting("library_root"))
+        self.bg_worker.moveToThread(self.bg_thread)
+        self.bg_thread.started.connect(self.bg_worker.run)
+        label = SYNTH_LABEL[key]
+        self.bg_worker.progress.connect(lambda d, t, txt: self.status_lbl.setText(
+            f"Reading what is on the {label}: {d} of {t}" if t else f"Reading the {label}…"))
+        self.bg_worker.done.connect(lambda res: self._bg_end(f"Green rows updated — read {len(res['reads'])} slots on "
+                                                            f"the {label}"))
+        self.bg_worker.failed.connect(lambda msg: self._bg_end(f"Could not read what is on the {label}: {msg}"))
+        self.bg_thread.start()
+
+    def _bg_end(self, text):
+        if self.bg_thread:
+            self.bg_thread.quit(); self.bg_thread.wait(); self.bg_thread = None
+        self.status_lbl.setText(text)
+        self.refresh()
+        rows = self.selected_rows()
+        self.details.show_row(rows[0] if rows else None)
 
     # ================================================================ previews
     def play(self, path):
@@ -673,12 +782,12 @@ class MainWindow(QMainWindow):
         if self.thread is not None:
             self.worker.stop = True
             self.thread.quit(); self.thread.wait(3000)
+        if self.bg_thread is not None:
+            self.bg_worker.stop = True
+            self.bg_thread.quit(); self.bg_thread.wait(5000)
         self.player.stop()
         t5 = self.session.drivers.get("take5")
         if t5 and t5.loaded and t5.pre and t5.pre.original_edit:
             self.session.put_back("take5")
         self.session.close()
-        if any(self.session.state.get(k) != "absent" for k in ("take5", "sub37", "syntakt")):
-            QMessageBox.information(self, APP, "Patch session over. Give the synths back to the Deluge (move the hub "
-                                               "cable back, or press the sharing switch's button).")
         super().closeEvent(e)

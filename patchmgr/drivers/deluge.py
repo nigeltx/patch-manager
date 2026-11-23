@@ -15,6 +15,7 @@ import threading
 from ..library.formats import pack_ms, read_deluge, unpack_ms
 
 HDR = bytes([0xF0, 0x00, 0x21, 0x7B, 0x01])
+PING = HDR + bytes([0x00, 0x00, 0xF7])                   # answered by HDR + 7F 00 F7
 JSON_REQ, JSON_REPLY = 0x04, 0x05
 BLOCK = 512
 INQUIRY = [0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7]
@@ -43,15 +44,81 @@ def is_inquiry_reply(m):
     return len(m) >= 15 and m[1] == 0x7E and m[3] == 0x06 and m[4] == 0x02 and m[5:9] == bytes([0x00, 0x21, 0x7B, 0x01])
 
 
+def port_pairs(ins, outs):
+    """Every input × output whose name mentions the Deluge, the plain-named ports first. The Deluge has three USB
+    ports and Windows names them differently from PC to PC, so the right pair is found by asking (a ping), the way
+    the Deluge bench test does."""
+    def rank(n):
+        low = n.lower()
+        return (any(k in low for k in ("midiin", "midiout", "port 2", "port 3")), low)
+    din = sorted((n for n in ins if "deluge" in n.lower()), key=rank)
+    dout = sorted((n for n in outs if "deluge" in n.lower()), key=rank)
+    return [(i, o) for i in din for o in dout]
+
+
 class Deluge:
     key = "deluge"
     label = "Deluge"
+    channel = None
 
-    def __init__(self, device):
+    def __init__(self, device=None, hub=None, log=None):
         self.dev = device
+        self.hub = hub
+        self.log = log or (lambda text: None)
         self.lock = threading.Lock()
         self.mid_base, self.mid_n, self.seq = 0, 7, 0
         self.firmware = ""
+        self.pre = None
+
+    # ---------------------------------------------------------------- finding the Deluge's port
+    def ping(self, dev, timeout=1.0):
+        r = dev.request(PING, lambda m: m.startswith(HDR) and len(m) >= 7 and m[5] == 0x7F, timeout)
+        return r is not None
+
+    def find(self):
+        """Open the first Deluge in/out pair that answers a ping. -> True if found."""
+        from ..midi import hub as midihub
+        ins, outs = midihub.list_ports()
+        pairs = port_pairs(ins, outs)
+        self.log(f"DELUGE ports seen: in {[n for n in ins if 'deluge' in n.lower()]} · "
+                 f"out {[n for n in outs if 'deluge' in n.lower()]}")
+        self.tried = []
+        for i, o in pairs:
+            self.hub.close("deluge")
+            try:
+                dev = midihub.Device("deluge", i, o)
+            except Exception as e:                       # noqa: BLE001
+                self.log(f"DELUGE in '{i}' / out '{o}' would not open: {e}")
+                self.tried.append(f"{i} / {o}: would not open ({e})")
+                continue
+            if self.ping(dev):
+                self.hub.devices["deluge"] = dev
+                self.dev = dev
+                self.log(f"DELUGE answers on in '{i}' · out '{o}'")
+                return True
+            self.log(f"DELUGE no ping answer on in '{i}' / out '{o}'")
+            self.tried.append(f"{i} / {o}: no answer")
+            dev.close()
+        return False
+
+    def preflight(self):
+        from .take5 import Preflight
+        if self.hub is not None and not self.find():
+            tried = "; ".join(self.tried) or "no port names mention the Deluge"
+            return Preflight(False, [("bad", "The Deluge did not answer on any of its USB ports. Check it is switched "
+                                             "on, its own USB cable reaches the PC, and no other program (Deluge "
+                                             "Sample Manager, a bench test, an editor) has its ports open. Tried: "
+                                      + tried)])
+        lines = [("ok", f"Answers on in '{self.dev.in_name}' · out '{self.dev.out_name}'")]
+        try:
+            fw = self.connect()
+        except DelugeError as e:
+            self.log(f"DELUGE session failed: {e}")
+            return Preflight(False, lines + [("bad", str(e).capitalize())])
+        lines.insert(0, ("ok", f"Deluge, firmware {fw}" if fw else "Deluge (firmware not reported)"))
+        lines.append(("ok", "File session open — the app can read presets in SYNTHS over USB"))
+        self.pre = Preflight(True, lines, os_version=fw)
+        return self.pre
 
     def _mid(self):
         self.seq = (self.seq % self.mid_n) + 1
@@ -68,18 +135,18 @@ class Deluge:
             return m[6] == mid or (name == "session" and b"session" in m[:40])
         r = self.dev.request(msg, test, timeout)
         if r is None:
-            raise DelugeError(f"the Deluge did not answer '{name}'")
+            self.log(f"DELUGE no answer to {name} {args}")
+            raise DelugeError(f"the Deluge did not answer the '{name}' command")
         _, obj, d = parse_reply(r)
         body = (obj or {}).get("^" + name) or (obj or {}).get(name) or {}
         return body, d
 
     def connect(self):
-        """Device inquiry, then a file session. -> firmware text."""
+        """A file session, and the firmware version if the Deluge says it. -> firmware text ('' if not reported)."""
         with self.lock:
             r = self.dev.request(INQUIRY, is_inquiry_reply, 1.5)
-            if r is None:
-                raise DelugeError("the Deluge did not answer the device inquiry — is its USB cable on the PC?")
-            self.firmware = ".".join(str(x) for x in r[12:15])
+            self.firmware = ".".join(str(x) for x in r[12:15]) if r is not None else ""
+            self.log(f"DELUGE device inquiry: {'firmware ' + self.firmware if r is not None else 'no answer'}")
             b, _ = self.cmd("session", {"tag": "PatchManager"})
             if "sid" not in b:
                 raise DelugeError("the Deluge did not open a file session — it needs the Community Firmware 1.3 or later")

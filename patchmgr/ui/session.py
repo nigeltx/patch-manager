@@ -6,14 +6,15 @@ import threading
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
+from ..drivers.deluge import Deluge
 from ..drivers.sub37 import Sub37
 from ..drivers.syntakt import Syntakt
 from ..drivers.take5 import Take5
 from ..midi import hub as midihub
 from ..midi.phrases import PhrasePlayer, Transport, all_notes_off
 
-DRIVERS = {"take5": Take5, "sub37": Sub37, "syntakt": Syntakt}
-SYNTHS = ("take5", "sub37", "syntakt")
+DRIVERS = {"take5": Take5, "sub37": Sub37, "syntakt": Syntakt, "deluge": Deluge}
+SYNTHS = ("take5", "sub37", "syntakt", "deluge")
 THROUGH_TYPES = (0x80, 0x90, 0xA0, 0xB0, 0xD0, 0xE0)
 
 
@@ -66,6 +67,12 @@ class Session(QObject):
             self.devices_changed.emit(dict(self.state))
 
     def _start(self, key):
+        if key == "deluge":                        # its port pair is found by asking (Deluge.find)
+            drv = Deluge(None, hub=self.hub, log=self.log)
+            self.drivers[key] = drv
+            self.state[key] = "checking"
+            threading.Thread(target=self._preflight, args=(key, drv), daemon=True).start()
+            return
         try:
             dev = self.hub.open(key)
         except Exception as e:                       # noqa: BLE001
@@ -221,7 +228,8 @@ class Session(QObject):
     def stop(self):
         self.player.stop()
         for d in self.drivers.values():
-            all_notes_off(d.dev, d.channel - 1)
+            if d.dev is not None and getattr(d, "channel", None):
+                all_notes_off(d.dev, d.channel - 1)
 
     def set_channel(self, synth, ch):
         self.db.set_setting(f"channel_{synth}", ch)

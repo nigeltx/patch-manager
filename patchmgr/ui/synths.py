@@ -52,6 +52,9 @@ class ReadWorker(QObject):
         try:
             self.done.emit(self._run())
         except Exception as e:                       # noqa: BLE001
+            log = getattr(self.session, "log", None)
+            if log:
+                log(f"READ {self.mode} {self.synth} failed: {e!r}")
             self.failed.emit(str(e) or e.__class__.__name__)
 
     def _known(self, db):
@@ -65,16 +68,11 @@ class ReadWorker(QObject):
         full = self.mode != "refresh"
         whole, firmware = None, ""
         if self.synth == "deluge":
-            from ..drivers.deluge import Deluge
-            dev = self.session.hub.open("deluge")
-            if dev is None:
-                raise RuntimeError("The Deluge is not on the PC — connect its own USB cable to the PC")
-            try:
-                d = Deluge(dev)
-                firmware = d.connect()
-                reads = d.read_slots(self._p, self.cancelled, None if full else self._known(db))
-            finally:
-                self.session.hub.close("deluge")
+            d = self.session.drivers.get("deluge")
+            if d is None or not self.session.ready("deluge"):
+                raise RuntimeError("The Deluge is not connected and checked — click Deluge on the toolbar to see why")
+            firmware = d.firmware
+            reads = d.read_slots(self._p, self.cancelled, None if full else self._known(db))
         else:
             drv = self.session.drivers.get(self.synth)
             if drv is None or not self.session.ready(self.synth):

@@ -1,16 +1,12 @@
-Patch Manager 0.4.0 — milestone 3: backups and factory presets (spec v1.8, sections 4.7, 4.8, 5.5).
+Patch Manager 0.4.1 — fixes from the first run of 0.4.0.
 
-Download the PatchManager-Setup .exe below and run it; it updates the installed app in place. Your library, ratings,
-tags, notes and crates carry over.
+Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.
 
-New
-- Synths menu on the toolbar: for each synth, Initialize factory presets, Back up, and Refresh what is on it.
-- Initialize factory presets reads a synth once, keeps the read as a dated backup in Studio > Patches > _Patch Manager >
-  Backups, and lets you tick its factory presets. Factory banks are preset per synth (Take 5 F1–F16, Sub 37 1–9,
-  Syntakt A) and can be changed in the dialog. A banner offers it the first time each synth connects.
-- Factory presets show an amber F. Sounds that are on a synth now show as green rows, and Details says which slot.
-- Sub 37: an ALL PRESETS dump is split into its 256 presets, with their own names (bench test 18).
-- Deluge: presets are read over USB with the Community Firmware's file protocol.
-- Search filters: factory, onsynth, blank.
-
-Nothing in this version writes to a synth's slots. Send to slot and the factory lock come in M4.
+Fixed
+- The toolbar shows the Take 5, Sub 37, Syntakt and Deluge. The KeyLab is no longer listed there (Play it from the
+  KeyLab still works).
+- The Deluge now has its own toolbar button and is checked when it connects. The app finds the right one of the
+  Deluge's three USB ports by asking each in turn, the way the Deluge bench test did; 0.4.0 guessed from the port
+  names and could pick a port the Deluge does not answer on.
+- If the Deluge still does not answer, its toolbar button says which ports were tried, and every step is written to
+  session log.txt in %LOCALAPPDATA%\PatchManager.

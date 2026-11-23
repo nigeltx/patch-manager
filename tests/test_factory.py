@@ -287,3 +287,48 @@ def test_syntakt_reads_banks_and_skips_unchanged_slots():
     pool["A"][1] = {"name": "JAB 2", "slot": 7, "size": 201}
     second = s.read_banks("ABH", known=known)
     assert len(reads_done) == 3 and second[0].hash == first[0].hash and second[1].name == "JAB 2"
+
+
+def test_deluge_port_pairs_put_the_plain_ports_first():
+    from patchmgr.drivers.deluge import port_pairs
+    ins = ["KeyLab 61 mk3 MIDI", "MIDIIN2 (Deluge) 7", "Deluge 6", "MIDIIN3 (Deluge) 8"]
+    outs = ["MIDIOUT2 (Deluge) 8", "Deluge 7", "Take 5 5"]
+    pairs = port_pairs(ins, outs)
+    assert pairs[0] == ("Deluge 6", "Deluge 7") and len(pairs) == 6
+
+
+def test_deluge_preflight_finds_the_port_that_answers(monkeypatch):
+    from patchmgr.drivers import deluge as dl
+    from patchmgr.midi import hub as midihub
+    card = FakeDeluge({"/SYNTHS/A.XML": xml("A")})
+
+    class Dev:
+        def __init__(self, key, i, o, *a):
+            self.key, self.in_name, self.out_name = key, i, o
+
+        def request(self, msg, test, timeout=2.0):
+            if self.in_name != "MIDIIN2 (Deluge)":             # on this PC only the second port answers
+                return None
+            if bytes(msg) == dl.PING:
+                r = dl.HDR + b"\x7F\x00\xF7"
+                return r if test(r) else None
+            return card.request(msg, test, timeout)
+
+        def close(self):
+            pass
+
+    class Hub:
+        devices = {}
+
+        def close(self, k):
+            self.devices.pop(k, None)
+    monkeypatch.setattr(midihub, "list_ports", lambda: (["Deluge", "MIDIIN2 (Deluge)"], ["Deluge"]))
+    monkeypatch.setattr(midihub, "Device", Dev)
+    logs = []
+    d = dl.Deluge(None, hub=Hub(), log=logs.append)
+    p = d.preflight()
+    assert p.ok and d.dev.in_name == "MIDIIN2 (Deluge)" and p.os_version == "1.3.0"
+    assert any("answers on" in t for t in logs)
+    monkeypatch.setattr(midihub, "list_ports", lambda: (["Deluge"], ["Deluge"]))
+    p = dl.Deluge(None, hub=Hub(), log=logs.append).preflight()
+    assert not p.ok and "Tried: Deluge / Deluge: no answer" in p.lines[0][1]

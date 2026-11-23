@@ -1,4 +1,4 @@
-Patch Manager 0.4.0 - milestones 1-3 (Library, Audition, Backups and factory presets)  (22 Nov 2026)
+Patch Manager 0.4.1 - milestones 1-3 (Library, Audition, Backups and factory presets)  (22 Nov 2026)
 Spec: Patch_Manager_Spec_v1.8.pdf - M1 (sections 4, 5.1), M2 (sections 3, 6), M3 (sections 4.7, 4.8, 5.3, 5.5, 7.5).
 
 To install
@@ -9,7 +9,7 @@ To install
 
 Patch session (M2)
   1. The synths' USB cables go to the hub on the PC; they stay there (playing goes over DIN).
-  2. The pills in the toolbar show Take 5, Sub 37, Syntakt and KeyLab. Green = connected and checked.
+  2. The pills in the toolbar show Take 5, Sub 37, Syntakt and Deluge. Green = connected and checked.
      Each synth is checked on arrival (device inquiry, SysEx over USB); click a pill for details.
   3. Select a Take 5 or Sub 37 patch and press Enter (or Load to edit buffer). It plays on the
      synth at once and nothing is stored. Tick "Load as I move through the list" to hear each

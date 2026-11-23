@@ -90,7 +90,7 @@ class MainWindow(QMainWindow):
         tb.addWidget(self.synths_btn)
         tb.addSeparator()
         self.pills = {}
-        for key, label in (("take5", "Take 5"), ("sub37", "Sub 37"), ("syntakt", "Syntakt"), ("keylab", "KeyLab")):
+        for key, label in (("take5", "Take 5"), ("sub37", "Sub 37"), ("syntakt", "Syntakt"), ("deluge", "Deluge")):
             b = QPushButton(f"○ {label}"); b.setFlat(True); b.setToolTip("Not connected to the PC")
             b.clicked.connect(lambda _=False, k=key: self.show_preflight(k))
             tb.addWidget(b); self.pills[key] = b
@@ -505,7 +505,7 @@ class MainWindow(QMainWindow):
     def _devices(self, state):
         for key, b in self.pills.items():
             st = state.get(key, "absent")
-            label = {"take5": "Take 5", "sub37": "Sub 37", "syntakt": "Syntakt", "keylab": "KeyLab"}[key]
+            label = SYNTH_LABEL[key]
             mark, colour, tip = {"absent": ("○", "#6b7280", "Not connected to the PC"),
                                  "checking": ("◌", "#b7791f", "Checking…"),
                                  "ready": ("●", "#047857", "Connected and checked — click for details"),
@@ -547,7 +547,7 @@ class MainWindow(QMainWindow):
         text = "<br>".join(f"<b>{icon[s_]}</b> {t}" for s_, t in p.lines)
         box = QMessageBox(self); box.setWindowTitle(f"{label} session check"); box.setText(text)
         again = box.addButton("Check again", QMessageBox.ActionRole)
-        chan = box.addButton("MIDI channel…", QMessageBox.ActionRole)
+        chan = box.addButton("MIDI channel…", QMessageBox.ActionRole) if key != "deluge" else None
         box.addButton(QMessageBox.Close)
         box.exec()
         if box.clickedButton() is again:
@@ -568,7 +568,7 @@ class MainWindow(QMainWindow):
         m = self.synths_menu; m.clear()
         for key in READ_SYNTHS:
             label = SYNTH_LABEL[key]
-            ok = key == "deluge" or self.session.ready(key)
+            ok = self.session.ready(key)
             init = self.db.last_init(key)
             sub = m.addMenu(f"{label}" + ("" if ok else "  (not connected)"))
             for mode in ("init", "backup", "refresh"):
@@ -580,9 +580,6 @@ class MainWindow(QMainWindow):
             info = sub.addAction(f"Initialized {when}: {init['marked_factory']} factory presets" if init
                                  else "Not initialized yet")
             info.setEnabled(False)
-            if key == "deluge":
-                hint = sub.addAction("Reads over the Deluge's own USB cable")
-                hint.setEnabled(False)
 
     def open_read(self, mode, key):
         if key is None:

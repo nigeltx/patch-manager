@@ -197,6 +197,7 @@ class Scanner:
             self._forget_missing(seen)
             self._link_previews(audio)
         con.commit()
+        self.db.update_type_guesses()
         self.progress(self.p)
         return self.p
 

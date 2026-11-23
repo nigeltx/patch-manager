@@ -1,7 +1,16 @@
-Patch Manager 0.4.2
+Patches by type. Version 0.5.0.
 
 Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.
 
-Changed
-- Syntakt factory banks now default to A-G. The Syntakt's factory sounds fill banks A to G; only H is free
-  (H128 is the audition slot). If an earlier version saved "A" for the Syntakt, it is read as A-G.
+New — the same idea as the Sample Manager's BY TYPE
+- BY TYPE in the left pane, with counts: Bass, Lead, Pad, Keys, Pluck, Arp/Seq, Strings, Brass, Bells, FX,
+  Drums (Kick, Snare, Clap, Hat, Cymbal, Tom, Percussion), and Unknown.
+- The type is the app's best guess from the patch name ("LD Super Saw" is a Lead, "BS Reese" a Bass), then
+  from the tags that came with the file (Syntakt sounds carry tags), then from the pack's folder names.
+  Moog's "PD …" presets are not taken as pads (PD means public domain).
+- A Type column next to Name (grey italics = the app's guess), and a Type line in Details saying where the
+  guess came from.
+- Right-click one or many patches → Set type… to correct the guess. Your choice always wins, survives rescans,
+  and "Go back to the app's guess" undoes it. Nothing is written to the patch files.
+- Search: type:bass, type:pad, type:drums, -type:fx.
+- The first start after updating works out the types of the whole library (a few seconds).

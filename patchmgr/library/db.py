@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS slot_state (synth TEXT, bank INTEGER, slot INTEGER, h
 CREATE TABLE IF NOT EXISTS journal (op_id INTEGER PRIMARY KEY, time REAL, synth TEXT, bank INTEGER, slot INTEGER,
     before_hash TEXT, after_hash TEXT, backup_path TEXT, step TEXT, status TEXT);
 CREATE TABLE IF NOT EXISTS setting (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS type_guess (hash TEXT PRIMARY KEY, types TEXT, why TEXT, rules INTEGER);
+CREATE TABLE IF NOT EXISTS type_user (hash TEXT PRIMARY KEY, types TEXT);
 CREATE TABLE IF NOT EXISTS synth_init (id INTEGER PRIMARY KEY, synth TEXT NOT NULL, model TEXT, firmware TEXT,
     run_at REAL, slots_read INTEGER, marked_factory INTEGER, backup TEXT);
 """
@@ -260,3 +262,46 @@ class DB:
     def last_init(self, synth):
         r = self.q("SELECT * FROM synth_init WHERE synth=? ORDER BY run_at DESC LIMIT 1", (synth,))
         return r[0] if r else None
+
+    # ---------------------------------------------------------------- patch types (BY TYPE)
+    def update_type_guesses(self, force=False):
+        """Work out the type of every patch that has no guess yet (or whose guess used older rules)."""
+        from . import ptypes
+        todo = self.q("SELECT p.id, p.hash, p.name FROM patch p LEFT JOIN type_guess g ON g.hash=p.hash "
+                      "WHERE p.kind='sound' AND (? OR g.hash IS NULL OR g.rules IS NOT ?)", (int(force), ptypes.RULES_VERSION))
+        rows = []
+        for r in todo:
+            tags = [t["name"] for t in self.q("SELECT t.name FROM patch_tag pt JOIN tag t ON t.id=pt.tag_id "
+                                              "WHERE pt.hash=? AND pt.origin='file'", (r["hash"],))]
+            o = self.q("SELECT sf.rel, po.name FROM patch_origin po JOIN source_file sf ON sf.id=po.file_id "
+                       "WHERE po.patch_id=? ORDER BY sf.rel LIMIT 1", (r["id"],))
+            folders = o[0]["rel"].replace("\\", "/").split("/")[:-1] if o else []
+            names = [r["name"]] + ([o[0]["name"]] if o and o[0]["name"] and o[0]["name"] != r["name"] else [])
+            types, why = ptypes.guess(" ".join(names), tags, folders)
+            rows.append((r["hash"], ptypes.pack(types), why, ptypes.RULES_VERSION))
+        self.con.executemany("INSERT OR REPLACE INTO type_guess(hash, types, why, rules) VALUES(?,?,?,?)", rows)
+        self.con.commit()
+        return len(rows)
+
+    def set_user_type(self, hashes, types):
+        from . import ptypes
+        self.con.executemany("INSERT OR REPLACE INTO type_user(hash, types) VALUES(?,?)",
+                             [(h, ptypes.pack(types)) for h in hashes])
+        self.con.commit()
+
+    def clear_user_type(self, hashes):
+        self.con.executemany("DELETE FROM type_user WHERE hash=?", [(h,) for h in hashes])
+        self.con.commit()
+
+    def type_counts(self, synth=None):
+        """{type: number of patches} for the BY TYPE section (sounds only; a patch with two types counts in both)."""
+        from . import ptypes
+        rows = self.q("SELECT COALESCE(u.types, g.types, ',Unknown,') t FROM patch p LEFT JOIN type_guess g ON g.hash=p.hash "
+                      "LEFT JOIN type_user u ON u.hash=p.hash WHERE p.kind='sound'" + (" AND p.synth=?" if synth else ""),
+                      (synth,) if synth else ())
+        out = {}
+        for r in rows:
+            for t in ptypes.unpack(r["t"]) or [ptypes.UNKNOWN]:
+                out[t] = out.get(t, 0) + 1
+        out["Drums"] = sum(1 for r in rows if any(t in ptypes.DRUMS for t in ptypes.unpack(r["t"])))
+        return out

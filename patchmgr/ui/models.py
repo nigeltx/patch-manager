@@ -4,9 +4,11 @@ from __future__ import annotations
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QSortFilterProxyModel, Qt
 from PySide6.QtGui import QColor, QFont
 
+from ..library import ptypes
 from ..library.formats import SYNTH_LABEL
 
-COLUMNS = ["", "F", "Name", "Synth", "Pack", "Source", "Tags", "Rating", "Copies"]
+COLUMNS = ["", "F", "Name", "Type", "Synth", "Pack", "Source", "Tags", "Rating", "Copies"]
+C_TYPE, C_TAGS, C_RATING, C_COPIES = 3, 7, 8, 9
 GREEN, AMBER, AMBER_TEXT = "#d8f0e4", "#fde7c7", "#7c2d12"
 TYPE_LABEL = {"free": "Free", "factory": "Factory", "paid": "Paid", "unsorted": "Unsorted", "backup": "Backup",
               "card": "Deluge card"}
@@ -15,6 +17,12 @@ STAR = "★"
 
 def stars(n):
     return STAR * (n or 0)
+
+
+def type_text(r):
+    if r["kind"] != "sound":
+        return ""
+    return ", ".join(ptypes.unpack(r.get("ptypes")) or [ptypes.UNKNOWN])
 
 
 class PatchModel(QAbstractTableModel):
@@ -53,22 +61,24 @@ class PatchModel(QAbstractTableModel):
                 return "F" if r.get("is_factory") else ""
             if c == 2:
                 return r["name"]
-            if c == 3:
-                return SYNTH_LABEL.get(r["synth"], r["synth"])
+            if c == C_TYPE:
+                return type_text(r)
             if c == 4:
-                return r["pack"] or ""
+                return SYNTH_LABEL.get(r["synth"], r["synth"])
             if c == 5:
-                return ", ".join(TYPE_LABEL.get(t, t) for t in sorted(set((r["types"] or "").split(",")) - {""}))
+                return r["pack"] or ""
             if c == 6:
+                return ", ".join(TYPE_LABEL.get(t, t) for t in sorted(set((r["types"] or "").split(",")) - {""}))
+            if c == C_TAGS:
                 return " ".join(t for t in (r["tags"] or "").split() if not t.endswith("?"))
-            if c == 7:
+            if c == C_RATING:
                 return stars(r["rating"])
-            if c == 8:
+            if c == C_COPIES:
                 return str(r["n_origins"]) if r["n_origins"] and r["n_origins"] > 1 else ""
         if role == Qt.UserRole:                     # sort key
-            if c == 7:
+            if c == C_RATING:
                 return r["rating"] or 0
-            if c == 8:
+            if c == C_COPIES:
                 return r["n_origins"] or 0
             return (self.data(index, Qt.DisplayRole) or "").lower()
         if role == Qt.BackgroundRole:
@@ -79,7 +89,9 @@ class PatchModel(QAbstractTableModel):
         if role == Qt.TextAlignmentRole and c == 1:
             return int(Qt.AlignCenter)
         if role == Qt.ForegroundRole:
-            if c == 7:
+            if c == C_TYPE and r["kind"] == "sound" and not r.get("ptype_user"):
+                return QColor("#4b5563")
+            if c == C_RATING:
                 return QColor("#b7791f")
             if c == 0:
                 return QColor("#2563eb")
@@ -94,12 +106,16 @@ class PatchModel(QAbstractTableModel):
                 return "On the synth now: " + (r.get("places") or "")
             if c == 1 and r.get("is_factory"):
                 return "A factory preset"
-            if c == 6:
+            if c == C_TYPE and r["kind"] == "sound":
+                return ptypes.how(r).capitalize() + " · right-click → Set type… to change it"
+            if c == C_TAGS:
                 sugg = [t[:-1] for t in (r["tags"] or "").split() if t.endswith("?")]
                 return ("Suggested (not yet confirmed): " + ", ".join(sugg)) if sugg else None
             if c == 2 and r["kind"] != "sound":
                 return {"project": "A Syntakt project — sent with Elektron Transfer",
                         "backup": "A whole-synth backup, kept as one item"}.get(r["kind"])
+        if role == Qt.FontRole and c == C_TYPE and r["kind"] == "sound" and not r.get("ptype_user"):
+            f = QFont(); f.setItalic(True); return f
         if role == Qt.FontRole and c == 2 and r["kind"] != "sound":
             f = QFont(); f.setItalic(True); return f
         return None

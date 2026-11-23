@@ -150,6 +150,11 @@ class Details(QScrollArea):
 
     def _onsynth_text(self, row):
         parts = []
+        if row["kind"] == "sound":
+            from ..library import ptypes
+            t = ", ".join(ptypes.unpack(row.get("ptypes")) or [ptypes.UNKNOWN])
+            how = ptypes.how(row)
+            parts.append(f"<b>Type:</b> {t} <span style='color:#6b7280;'>({how} · right-click → Set type…)</span>")
         if row.get("is_factory"):
             parts.append("<span style='background:#fde7c7; color:#7c2d12; font-weight:700;'>&nbsp;F&nbsp;</span> "
                          "A factory preset — its slot on the synth is locked")

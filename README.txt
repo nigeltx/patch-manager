@@ -1,4 +1,4 @@
-Patch Manager 0.4.2 - milestones 1-3 (Library, Audition, Backups and factory presets)  (22 Nov 2026)
+Patch Manager 0.5.0 - milestones 1-3, plus By type (Library, Audition, Backups and factory presets)  (22 Nov 2026)
 Spec: Patch_Manager_Spec_v1.8.pdf - M1 (sections 4, 5.1), M2 (sections 3, 6), M3 (sections 4.7, 4.8, 5.3, 5.5, 7.5).
 
 To install
@@ -43,6 +43,9 @@ Synths menu (M3) - for each synth: Initialize factory presets, Back up, Refresh 
   - When an initialized Take 5 or Syntakt connects, the app reads it again in the background so the
     green rows stay current. The Sub 37 updates when you back it up.
   - Nothing is written to any synth by these actions.
+
+By type (0.5.0) - BY TYPE in the left pane; Type column; right-click → Set type… to correct a guess;
+  search type:bass, type:drums.
 
 Not yet
   Send to slot and the factory lock (M4), Deluge audition over USB.

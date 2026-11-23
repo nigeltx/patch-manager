@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QFrame, QPushButton
                                QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from .. import audio
-from ..library import search
+from ..library import ptypes, search
 from ..library.db import DB
 from ..library.formats import SYNTH_LABEL
 from ..library.scanner import Scanner, find_deluge_cards, find_library_root
@@ -23,11 +23,12 @@ from .audition import AuditionPanel
 from .details import Details
 from .session import Session
 from .synths import MODES, READ_SYNTHS, ReadDialog, ReadWorker
+from .type_dialog import TypeDialog
 from .models import TYPE_LABEL, PatchModel, SortProxy
 
 APP = "Patch Manager"
 from patchmgr import __version__
-VERSION = f"{__version__} (M3 Backups and factory presets)"
+VERSION = f"{__version__} (M3 Backups and factory presets, by type)"
 SYNTH_ORDER = ["take5", "sub37", "deluge", "syntakt"]
 HELP = """<b>Search</b> — type words to match names, packs and notes, and add filters:<br>
 <code>synth:take5</code> &nbsp; <code>synth:sub37</code> &nbsp; <code>synth:deluge</code> &nbsp; <code>synth:syntakt</code><br>
@@ -35,6 +36,7 @@ HELP = """<b>Search</b> — type words to match names, packs and notes, and add 
 <code>source:paid</code> / free / factory / unsorted / card &nbsp; <code>pack:audiotent</code> &nbsp; <code>crate:keepers</code><br>
 <code>unheard</code> &nbsp; <code>heard</code> &nbsp; <code>preview</code> &nbsp; <code>dupe</code> &nbsp; <code>unrated</code>
 &nbsp; <code>factory</code> &nbsp; <code>onsynth</code> &nbsp; <code>blank</code><br>
+<code>type:bass</code> &nbsp; <code>type:pad</code> &nbsp; <code>type:drums</code> &nbsp; <code>-type:fx</code><br>
 Put <code>-</code> in front of anything to exclude it: <code>-tag:drum</code>. Use quotes for spaces: <code>pack:"lost clouds"</code>.<br><br>
 <b>Keys</b> — ↑ ↓ move (and load, if that box is ticked) · Enter loads and plays the test phrase · P plays it again ·
 Esc stops · T starts or stops the transport · 1–5 rate the selected patches, 0 clears · Space plays or stops the preview
@@ -64,6 +66,7 @@ class MainWindow(QMainWindow):
     def __init__(self, db: DB):
         super().__init__()
         self.db = db
+        self.db.update_type_guesses()                # first start after 0.5.0: types for the whole library
         self.player = audio.Player()
         self.scope = {}
         self.thread = None
@@ -114,7 +117,7 @@ class MainWindow(QMainWindow):
         self.table.verticalHeader().setVisible(False); self.table.verticalHeader().setDefaultSectionSize(24)
         self.table.setAlternatingRowColors(True); self.table.setWordWrap(False)
         hh = self.table.horizontalHeader()
-        for c, w in enumerate([26, 24, 240, 64, 190, 90, 150, 72, 52]):
+        for c, w in enumerate([26, 24, 220, 80, 56, 140, 70, 100, 56, 44]):
             self.table.setColumnWidth(c, w)
         hh.setSectionResizeMode(2, QHeaderView.Stretch); hh.setStretchLastSection(False)
         self.table.selectionModel().selectionChanged.connect(self._selected)
@@ -300,6 +303,7 @@ class MainWindow(QMainWindow):
                         pi = QTreeWidgetItem([f"{r['pack']}  ({r['n']:,})"])
                         pi.setData(0, Qt.UserRole, {"synth": syn, "type": t, "pack": r["pack"]}); ti.addChild(pi)
             it.setExpanded(True)
+        self._type_section()
         other = self.db.q("SELECT kind, COUNT(*) n FROM patch WHERE kind!='sound' GROUP BY kind")
         for r in other:
             label = {"project": "Syntakt projects", "backup": "Whole-synth backups"}.get(r["kind"], r["kind"])
@@ -324,6 +328,43 @@ class MainWindow(QMainWindow):
         self.tree.addTopLevelItem(pi)
         self.tree.blockSignals(False)
         self._reselect(keep)
+
+    def _type_section(self):
+        """BY TYPE, as in the Sample Manager: the app's guess from names, tags and folders, or your own choice."""
+        counts = self.db.type_counts()
+        hdr = QTreeWidgetItem(["By type"]); hdr.setData(0, Qt.UserRole, {"header": "types"})
+        f = hdr.font(0); f.setBold(True); hdr.setFont(0, f)
+        hdr.setToolTip(0, "Guessed from the patch name, its tags and its folders. Right-click a patch → Set type… to "
+                          "correct it.")
+        self.tree.addTopLevelItem(hdr)
+        for t in ptypes.MUSIC:
+            if counts.get(t):
+                it = QTreeWidgetItem([f"{t}  ({counts[t]:,})"]); it.setData(0, Qt.UserRole, {"ptype": t}); hdr.addChild(it)
+        if counts.get("Drums"):
+            d = QTreeWidgetItem([f"Drums  ({counts['Drums']:,})"]); d.setData(0, Qt.UserRole, {"ptype": "Drums"})
+            hdr.addChild(d)
+            for t in ptypes.DRUMS:
+                if counts.get(t):
+                    it = QTreeWidgetItem([f"{t}  ({counts[t]:,})"]); it.setData(0, Qt.UserRole, {"ptype": t}); d.addChild(it)
+        if counts.get(ptypes.UNKNOWN):
+            it = QTreeWidgetItem([f"Unknown  ({counts[ptypes.UNKNOWN]:,})"])
+            it.setData(0, Qt.UserRole, {"ptype": ptypes.UNKNOWN}); hdr.addChild(it)
+        hdr.setExpanded(True)
+
+    def set_type_selected(self):
+        rows = [r for r in self.selected_rows() if r["kind"] == "sound"]
+        if not rows:
+            return
+        dlg = TypeDialog(self, len(rows), ptypes.unpack(rows[0].get("ptypes")))
+        if dlg.exec() and dlg.result_value:
+            hashes = [r["hash"] for r in rows]
+            if dlg.result_value[0] == "set":
+                self.db.set_user_type(hashes, dlg.result_value[1])
+            else:
+                self.db.clear_user_type(hashes)
+            self.fill_tree(); self.refresh()
+            self.details.show_row(self.details.row and next((x for x in self.model.rows
+                                                             if x["hash"] == self.details.row["hash"]), None))
 
     def _reselect(self, scope):
         def walk(it):
@@ -365,7 +406,7 @@ class MainWindow(QMainWindow):
         if self.center.currentIndex() == 1:
             return
         text = self.search.text()
-        scope = {k: v for k, v in self.scope.items() if k in ("synth", "type", "pack", "crate_id", "kind")}
+        scope = {k: v for k, v in self.scope.items() if k in ("synth", "type", "pack", "crate_id", "kind", "ptype")}
         if self.scope.get("query"):
             text = (self.scope["query"] + " " + text).strip()
         try:
@@ -383,7 +424,7 @@ class MainWindow(QMainWindow):
             for i, r in enumerate(self.model.rows):
                 if r["hash"] in sel:
                     self.table.selectRow(self.proxy.mapFromSource(self.model.index(i, 0)).row()); break
-        self.status_lbl.setText(f"{len(rows):,} patches shown")
+        self.status_lbl.setText(f"{len(rows):,} patch{'' if len(rows) == 1 else 'es'} shown")
 
     def selected_rows(self):
         out = []
@@ -731,6 +772,9 @@ class MainWindow(QMainWindow):
         cm.addSeparator(); cm.addAction("New crate…", lambda: self.new_crate(add_selected=True))
         if self.scope.get("crate_id"):
             m.addAction(f"Remove from '{self.scope['crate']}'", self.remove_from_crate)
+        sounds = [r for r in rows if r["kind"] == "sound"]
+        if sounds:
+            m.addAction(f"Set type… ({len(sounds)})" if len(sounds) > 1 else "Set type…", self.set_type_selected)
         rm = m.addMenu("Rate")
         for n in range(5, -1, -1):
             rm.addAction("★" * n if n else "Clear", lambda n=n: self.rate_selected(n))

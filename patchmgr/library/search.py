@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 import shlex
 
+from . import ptypes
 from .db import FACTORY_SQL
 
 SYNTH_ALIASES = {"take5": "take5", "take 5": "take5", "t5": "take5", "sub37": "sub37", "sub 37": "sub37",
@@ -25,9 +26,19 @@ SELECT p.id, p.hash, p.synth, p.name, p.fmt, p.kind,
        EXISTS(SELECT 1 FROM slot_state ss WHERE ss.hash=p.hash) AS on_synth,
        (SELECT GROUP_CONCAT(ss.place, ', ') FROM slot_state ss WHERE ss.hash=p.hash) AS places,
        """ + FACTORY_SQL + """ AS is_factory,
-       p.blank
-FROM patch p LEFT JOIN meta m ON m.hash=p.hash
+       p.blank,
+       COALESCE(tu.types, tg.types) AS ptypes, tg.why AS ptype_why, (tu.hash IS NOT NULL) AS ptype_user
+FROM patch p LEFT JOIN meta m ON m.hash=p.hash LEFT JOIN type_guess tg ON tg.hash=p.hash
+     LEFT JOIN type_user tu ON tu.hash=p.hash
 """
+
+TYPE_COL = "COALESCE(tu.types, tg.types, ',Unknown,')"
+
+
+def type_cond(name):
+    """SQL for 'this patch is of type name' (name may be 'Drums', meaning any drum type)."""
+    names = ptypes.DRUMS if name == "Drums" else [name]
+    return "(" + " OR ".join(f"{TYPE_COL} LIKE ?" for _ in names) + ")", [f"%,{n},%" for n in names]
 
 
 class QueryError(ValueError):
@@ -59,6 +70,9 @@ def build(text: str, scope: dict | None = None) -> tuple[str, list]:
         where.append("p.hash IN (SELECT hash FROM crate_patch WHERE crate_id=?)"); args.append(scope["crate_id"])
     if scope.get("kind"):
         where.append("p.kind=?"); args.append(scope["kind"])
+    if scope.get("ptype"):
+        c, a = type_cond(scope["ptype"])
+        where.append(c + " AND p.kind='sound'"); args += a
     for tok in tokens(text or ""):
         neg = tok.startswith("-") and len(tok) > 1
         t = tok[1:] if neg else tok
@@ -90,6 +104,11 @@ def build(text: str, scope: dict | None = None) -> tuple[str, list]:
             cond = ("EXISTS(SELECT 1 FROM patch_origin po JOIN source_file sf ON sf.id=po.file_id JOIN source s "
                     "ON s.id=sf.source_id WHERE po.patch_id=p.id AND s.pack LIKE ?)")
             a = [f"%{val}%"]
+        elif val and key == "type":
+            name = ptypes.find(val)
+            if not name:
+                raise QueryError(f"unknown type '{val}' — " + ", ".join(t.lower() for t in ptypes.ALL_TYPES) + ", drums")
+            cond, a = type_cond(name)
         elif val and key == "crate":
             cond = "p.hash IN (SELECT cp.hash FROM crate_patch cp JOIN crate c ON c.id=cp.crate_id WHERE c.name LIKE ?)"
             a = [f"%{val}%"]

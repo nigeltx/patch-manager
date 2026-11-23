@@ -1,4 +1,4 @@
-Patch Manager 0.4.1 - milestones 1-3 (Library, Audition, Backups and factory presets)  (22 Nov 2026)
+Patch Manager 0.4.2 - milestones 1-3 (Library, Audition, Backups and factory presets)  (22 Nov 2026)
 Spec: Patch_Manager_Spec_v1.8.pdf - M1 (sections 4, 5.1), M2 (sections 3, 6), M3 (sections 4.7, 4.8, 5.3, 5.5, 7.5).
 
 To install
@@ -32,7 +32,7 @@ Library (M1)
 Synths menu (M3) - for each synth: Initialize factory presets, Back up, Refresh what is on it
   - Initialize factory presets (do this first, once per synth): reads the synth, keeps the read as a
     dated backup in Studio > Patches > _Patch Manager > Backups, then lists every slot. Slots in the
-    factory banks (Take 5 F1-F16, Sub 37 1-9, Syntakt A - change them in the dialog) and sounds that
+    factory banks (Take 5 F1-F16, Sub 37 1-9, Syntakt A-G - change them in the dialog) and sounds that
     match a maker's file in a Factory folder are ticked; untick anything that is yours, then Apply.
     Blank init sounds ("Init Preset") are never factory.
   - Factory presets show an amber F in the list. A green row is a sound that is on a synth now;

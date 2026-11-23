@@ -1,12 +1,7 @@
-Patch Manager 0.4.1 — fixes from the first run of 0.4.0.
+Patch Manager 0.4.2
 
 Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.
 
-Fixed
-- The toolbar shows the Take 5, Sub 37, Syntakt and Deluge. The KeyLab is no longer listed there (Play it from the
-  KeyLab still works).
-- The Deluge now has its own toolbar button and is checked when it connects. The app finds the right one of the
-  Deluge's three USB ports by asking each in turn, the way the Deluge bench test did; 0.4.0 guessed from the port
-  names and could pick a port the Deluge does not answer on.
-- If the Deluge still does not answer, its toolbar button says which ports were tried, and every step is written to
-  session log.txt in %LOCALAPPDATA%\PatchManager.
+Changed
+- Syntakt factory banks now default to A-G. The Syntakt's factory sounds fill banks A to G; only H is free
+  (H128 is the audition slot). If an earlier version saved "A" for the Syntakt, it is read as A-G.

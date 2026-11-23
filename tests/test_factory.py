@@ -332,3 +332,10 @@ def test_deluge_preflight_finds_the_port_that_answers(monkeypatch):
     monkeypatch.setattr(midihub, "list_ports", lambda: (["Deluge"], ["Deluge"]))
     p = dl.Deluge(None, hub=Hub(), log=logs.append).preflight()
     assert not p.ok and "Tried: Deluge / Deluge: no answer" in p.lines[0][1]
+
+
+def test_syntakt_factory_banks_default_to_a_to_g(tmp_path):
+    db = DB(str(tmp_path / "l.db"))
+    assert factory.parse_banks("syntakt", db.factory_banks("syntakt")) == set(range(1, 8))
+    db.set_setting("factory_banks_syntakt", "A")              # saved by 0.4.0/0.4.1
+    assert db.factory_banks("syntakt") == "A-G"

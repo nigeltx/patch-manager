@@ -142,7 +142,7 @@ class ReadDialog(QDialog):
             self.banks = QLineEdit(db.factory_banks(synth)); self.banks.setMaximumWidth(180); h.addWidget(self.banks)
             hint = {"take5": "U1–U16 are user banks, F1–F16 factory banks — e.g. F1-F16, or U1-U8, F1-F16",
                     "sub37": "e.g. 1-9 — banks after these are yours",
-                    "syntakt": "sound banks, e.g. A or A-B"}[synth]
+                    "syntakt": "sound banks A-H, e.g. A-G — the factory sounds fill A to G"}[synth]
             hl = QLabel(hint); hl.setStyleSheet("color:#6b7280;"); h.addWidget(hl); h.addStretch(1)
             v.addLayout(h)
             sub = QLabel("Presets in these banks are ticked as factory. So is any sound that matches a maker's file in "

@@ -52,7 +52,7 @@ MIGRATIONS = {
 }
 
 # Banks that hold factory presets, as the synth's panel numbers them (spec 4.7, 5.5). Take 5: U = user, F = factory.
-FACTORY_BANKS_DEFAULT = {"take5": "F1-F16", "sub37": "1-9", "syntakt": "A", "deluge": ""}
+FACTORY_BANKS_DEFAULT = {"take5": "F1-F16", "sub37": "1-9", "syntakt": "A-G", "deluge": ""}
 
 # A patch is factory when Initialize marked it, or when it is in a maker's Factory folder — never if it is blank.
 FACTORY_SQL = ("(p.blank = 0 AND COALESCE(p.factory, '') != 'no' AND (p.factory = 'read' OR EXISTS("
@@ -225,7 +225,10 @@ class DB:
 
     # ---------------------------------------------------------------- factory presets (spec 4.7)
     def factory_banks(self, synth):
-        return self.setting(f"factory_banks_{synth}", FACTORY_BANKS_DEFAULT.get(synth, ""))
+        v = self.setting(f"factory_banks_{synth}", FACTORY_BANKS_DEFAULT.get(synth, ""))
+        if synth == "syntakt" and v == "A":          # the 0.4.0/0.4.1 default; Nigel's Syntakt has factory sounds in A-G
+            v = FACTORY_BANKS_DEFAULT["syntakt"]
+        return v
 
     def is_factory(self, patch_id):
         return bool(self.one(f"SELECT {FACTORY_SQL} FROM patch p WHERE p.id=?", (patch_id,)))

@@ -1,5 +1,5 @@
-"""Sequential Take 5 driver, milestone 2: recognise, preflight, edit-buffer audition (spec 2.1, 3.2, 3.4, 6.1).
-Nothing here writes to a program slot."""
+"""Sequential Take 5 driver: recognise, preflight, edit-buffer audition (spec 2.1, 3.2, 3.4, 6.1), reading slots (M3)
+and writing one user slot at a time with a read-back check (M4, spec 7.1). Factory banks are never written here."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -10,6 +10,8 @@ from ..library.formats import (T5_EDIT, T5_EDIT_LEN, T5_ID, T5_NAME_AT, T5_PROG_
 INQUIRY = [0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7]
 REQ_EDIT = [0xF0, 0x01, 0x35, 0x06, 0xF7]
 ALL_BANKS = range(1, 33)            # 1–16 user banks U1–U16, 17–32 factory banks F1–F16 (bytes 0–31)
+USER_BANKS = range(1, 17)
+WRITE_SETTLE = 0.15                 # seconds between a write and its read-back (bench test 14 stored at once)
 
 
 def req_program(bank, prog):
@@ -48,10 +50,19 @@ def edit_from(data: bytes) -> bytes:
     return b"\xF0\x01\x35\x03" + t5_payload(data) + b"\xF7"
 
 
+def program_to(data: bytes, bank: int, prog: int) -> bytes:
+    """Any Take 5 program or edit-buffer message → a Program Data Dump for user bank 1–16, program 1–16."""
+    if not 1 <= bank <= 16 or not 1 <= prog <= 16:
+        raise ValueError(f"U{bank}-{prog:02d} is not a user slot")
+    if not data.startswith(T5_ID) or data[3] not in (T5_PROGRAM, T5_EDIT):
+        raise ValueError("not a Take 5 program")
+    return bytes([0xF0, 0x01, 0x35, 0x02, bank - 1, prog - 1]) + t5_payload(data) + b"\xF7"
+
+
 class Take5:
     key = "take5"
     label = "Take 5"
-    CAN = {"audition": True, "read_slot": False, "write_slot": False, "backup": False}   # M2
+    CAN = {"audition": True, "read_slot": True, "write_slot": True, "backup": True}
 
     def __init__(self, device):
         self.dev = device
@@ -133,3 +144,13 @@ class Take5:
             if progress:
                 progress(i + 1, len(todo), f"{place('take5', b, p)} {pt.name}")
         return out
+
+    # ---------------------------------------------------------------- writing a user slot (M4, spec 7.1)
+    def write_program(self, data: bytes, bank: int, prog: int):
+        """Write one user slot and read it back. -> (ok, what came back or None). Never a factory bank."""
+        import time
+        msg = program_to(data, bank, prog)
+        self.dev.send(msg)
+        time.sleep(WRITE_SETTLE)
+        back = self.read_program(bank, prog)
+        return (back is not None and t5_payload(back) == t5_payload(msg)), back

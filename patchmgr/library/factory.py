@@ -216,10 +216,15 @@ def library_hashes(db, synth: str) -> set[str]:
         (synth, *LIB_TYPES))}
 
 
+def blank_hashes(db, synth: str) -> set[str]:
+    """Sounds marked blank in the library — init programs, including the one you made for Clear user slots."""
+    return {r["hash"] for r in db.q("SELECT hash FROM patch WHERE synth=? AND blank=1", (synth,))}
+
+
 def new_sounds(db, synth: str, reads: list[SlotRead], factory_banks: set[int] | None = None) -> list[SlotRead]:
     """Get from synth (spec 5.3): sounds on the synth that are in no source — once each, blanks left out. Slots in the
     synth's factory banks are left out too: those sounds are factory, and Initialize puts them in Sources › Factory."""
-    have, seen, out = library_hashes(db, synth), set(), []
+    have, seen, out = library_hashes(db, synth) | blank_hashes(db, synth), set(), []
     counts = Counter(r.hash for r in reads)
     fb = factory_banks or set()
     for r in reads:
@@ -234,7 +239,7 @@ def keep_in_sources(db, root: str, synth: str, items, factory_hashes: set[str], 
     """Split a read of a synth into Sources: factory sounds → Sources\\Factory\\<date> Factory read, sounds of yours that
     are in no source → Sources\\User\\<date> <Synth> read. items: (hash, place, name, data, blank). Each sound once."""
     from .layout import sources_dir, stamp
-    have = library_hashes(db, synth)
+    have = library_hashes(db, synth) | blank_hashes(db, synth)
     fac, usr, seen = [], [], set()
     counts = Counter(i[0] for i in items)
     for h, place, name, data, blank in items:

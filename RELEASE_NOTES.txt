@@ -1,3 +1,24 @@
+Take 5 user slots. Version 0.7.0.
+
+Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.
+
+New — design spec v1.11, sections 7.9 and 7.10. On the Synths menu, under Take 5:
+- Clear user slots… writes a blank init program into all 256 user slots, U1-01 to U16-16. Factory banks
+  F1-F16 are never touched. First you choose Init Program on the Take 5's panel and save it into one user slot
+  (U16-16 unless you pick another); the app reads it, asks you to confirm its name, and keeps it as
+  _Patch Manager > Take 5 init.syx. That sound is marked blank, so it is never kept as one of yours.
+  Then every user slot is read and saved in Backups, and any sound that is in no source goes to
+  Sources > User before anything is written. The plan lists every slot; nothing is written until you press
+  Clear. About two to three minutes.
+- Fill user slots… sends your own Take 5 patches (whose only source is Sources > User) into the user slots,
+  packed from U1-01 in Patches order: Bass, Lead, Pad … then by name. Only slots holding the init program
+  are used, so nothing of yours is written over. Untick any you do not want.
+- Undo the last clear or fill… puts the old programs back from their backups.
+- Every slot: read it, check it still holds what the plan expects, back it up, write, read back, compare.
+  If a compare fails the old program goes straight back and the run stops. Stop after this slot stops a run
+  cleanly.
+- User banks U1-U16 are never locked, even when they hold copies of factory sounds.
+
 Sources and Patches. Version 0.6.0.
 
 Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.

@@ -29,7 +29,7 @@ from .models import TYPE_LABEL, PatchModel, SortProxy
 
 APP = "Patch Manager"
 from patchmgr import __version__
-VERSION = f"{__version__} (M3b Sources and Patches)"
+VERSION = f"{__version__} (M3b Sources and Patches · M4 Take 5 user slots)"
 SYNTH_ORDER = ["take5", "sub37", "deluge", "syntakt"]
 HELP = """<b>Search</b> — type words to match names, packs and notes, and add filters:<br>
 <code>synth:take5</code> &nbsp; <code>synth:sub37</code> &nbsp; <code>synth:deluge</code> &nbsp; <code>synth:syntakt</code><br>
@@ -749,11 +749,33 @@ class MainWindow(QMainWindow):
                 a = sub.addAction(MODES[mode] + ("…" if mode != "refresh" else ""),
                                   lambda k=key, md=mode: self.open_read(md, k))
                 a.setEnabled(ok and (mode != "refresh" or key != "sub37"))
+            if key == "take5":
+                sub.addSeparator()
+                for text, cls in (("Clear user slots…", "ClearDialog"), ("Fill user slots…", "FillDialog"),
+                                  ("Undo the last clear or fill…", "UndoDialog")):
+                    a = sub.addAction(text, lambda c=cls: self.open_user_slots(c))
+                    a.setEnabled(ok or cls == "FillDialog")
             sub.addSeparator()
             when = time.strftime('%d %b %Y', time.localtime(init["run_at"])) if init else None
             info = sub.addAction(f"Initialized {when}: {init['marked_factory']} factory presets" if init
                                  else "Not initialized yet")
             info.setEnabled(False)
+
+    def open_user_slots(self, cls):
+        """Take 5 user slots (spec 7.9, 7.10)."""
+        from . import userslots as us
+        root = self._root_or_warn()
+        if not root:
+            return
+        if not layout.is_new_layout(root, "take5"):
+            QMessageBox.information(self, APP, "Reorganize the library first (Library ▾ › Reorganize library…), so your "
+                                               "own sounds have a place in Sources › User before any slot is cleared.")
+            return
+        dlg = getattr(us, cls)(self, self.session, self.db, root)
+        dlg.exec()
+        if cls == "ClearDialog":
+            self.open_rebuild(["take5"], quiet=True)       # sounds kept from the user slots join Patches
+        self.fill_tree(); self.refresh()
 
     def _fill_get_menu(self):
         m = self.get_menu; m.clear()

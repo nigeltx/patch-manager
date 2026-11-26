@@ -1,3 +1,32 @@
+Sources and Patches. Version 0.6.0.
+
+Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.
+
+New — design spec v1.10, section 4
+- Each synth folder now has two folders. Sources (Factory, Paid, Free, User) keeps every pack, factory set and
+  synth read as it came. Patches holds every sound once, one file each, in a folder for its type: Bass, Lead,
+  Pad, Keys, Pluck, Arp-Seq, Strings, Brass, Bells, FX, Kick, Snare, Clap, Hat, Cymbal, Tom, Percussion, Unknown.
+- Library > Reorganize library… moves today's folders into the new layout once, and shows every move first.
+  Folders you already moved (Sub 37 > Sources > Free) are left where they are. Sample packs (Twin Shot) go to a
+  Samples folder. The factory reads in _Patch Manager > Backups stay there; their factory sounds are copied into
+  Sources > Factory and your own sounds into Sources > User, so your own presets are never marked factory.
+  Empty old folders go on the Studio Cleanup list. The app offers this once on the first start.
+- Rebuild (toolbar) brings Patches up to date with Sources and shows the plan first. Files it takes out go to
+  _Patch Manager > Removed, never deleted. A second rebuild changes nothing. A file you put in Patches by hand
+  whose sound is in no source is moved to Sources > User > Added by hand, so it is never lost.
+- Get from synth (toolbar) reads a synth and keeps the sounds that are in no source — ones you made on the
+  panel — in Sources > User, then adds them to Patches. Slots in the factory banks are left to Initialize.
+- Initialize factory presets now puts the ticked factory sounds in Sources > Factory and your own in
+  Sources > User (once the library is reorganized).
+- Zip packs are read where they are, without unpacking.
+- Sources are locked by the app and fingerprinted. Google Drive drops Windows' read-only mark (bench test 20),
+  so instead every scan checks each file: one that changed or went missing outside the app is listed under
+  "Sources changed or missing", and its sounds are kept as they were until you decide.
+- Right-click a User source > Delete user source… (type its name to confirm; it goes to Drive's trash).
+- Set type… now moves the file in Patches too; your choices are kept in _Patch Manager > types.json.
+- Left pane: each synth shows Patches by type folder, with how many are on the synth, then Sources.
+
+
 Patches by type. Version 0.5.0.
 
 Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.

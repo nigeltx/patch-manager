@@ -117,6 +117,10 @@ def test_user_data_survives_rescan_and_deletion(lib):
     assert db.meta(h)["rating"] == 5
     assert db.crates_of(h) == ["Keepers"]
     pid = db.one("SELECT id FROM patch WHERE hash=?", (h,))
+    alerts = db.source_alerts()                     # a pack file gone from Sources is flagged, not forgotten (spec 4.4)
+    assert [(a["state"], a["rel"].split("/")[-1]) for a in alerts] == [("missing", "Bank 1.syx")]
+    assert len(db.origins(pid)) == 2
+    db.accept_missing(alerts[0]["id"])
     assert len(db.origins(pid)) == 1                                                # Factory copy remains
 
 

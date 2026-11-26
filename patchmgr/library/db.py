@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS journal (op_id INTEGER PRIMARY KEY, time REAL, synth 
 CREATE TABLE IF NOT EXISTS setting (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS type_guess (hash TEXT PRIMARY KEY, types TEXT, why TEXT, rules INTEGER);
 CREATE TABLE IF NOT EXISTS type_user (hash TEXT PRIMARY KEY, types TEXT);
+CREATE TABLE IF NOT EXISTS patch_file (path TEXT PRIMARY KEY, synth TEXT NOT NULL, hash TEXT NOT NULL,
+    folder TEXT, size INTEGER, mtime REAL, written_at REAL);
 CREATE TABLE IF NOT EXISTS synth_init (id INTEGER PRIMARY KEY, synth TEXT NOT NULL, model TEXT, firmware TEXT,
     run_at REAL, slots_read INTEGER, marked_factory INTEGER, backup TEXT);
 """
@@ -51,6 +53,7 @@ CREATE TABLE IF NOT EXISTS synth_init (id INTEGER PRIMARY KEY, synth TEXT NOT NU
 MIGRATIONS = {
     "patch": [("factory", "TEXT"), ("blank", "INTEGER NOT NULL DEFAULT 0")],
     "slot_state": [("place", "TEXT"), ("name", "TEXT"), ("how", "TEXT"), ("info", "TEXT")],
+    "source_file": [("sha1", "TEXT"), ("state", "TEXT NOT NULL DEFAULT 'ok'"), ("new_sha1", "TEXT")],
 }
 
 # Banks that hold factory presets, as the synth's panel numbers them (spec 4.7, 5.5). Take 5: U = user, F = factory.
@@ -291,6 +294,28 @@ class DB:
 
     def clear_user_type(self, hashes):
         self.con.executemany("DELETE FROM type_user WHERE hash=?", [(h,) for h in hashes])
+        self.con.commit()
+
+    # ---------------------------------------------------------------- sources changed or missing (spec 4.4)
+    def source_alerts(self):
+        """Files in Sources that changed or disappeared behind the app's back."""
+        return self.q("SELECT sf.id, sf.path, sf.rel, sf.state, s.synth, s.type, s.pack, "
+                      "(SELECT COUNT(*) FROM patch_origin po WHERE po.file_id=sf.id) n FROM source_file sf "
+                      "JOIN source s ON s.id=sf.source_id WHERE sf.state IN ('changed','missing') ORDER BY sf.rel")
+
+    def accept_change(self, file_id):
+        """Use the new version of a changed file: its fingerprint becomes the new one and the next scan reads it."""
+        self.con.execute("UPDATE source_file SET sha1=NULL, new_sha1=NULL, state='ok', mtime=0 WHERE id=? "
+                         "AND state='changed'", (file_id,))
+        self.con.commit()
+
+    def accept_missing(self, file_id):
+        """The file was meant to go: forget it (its sounds leave Patches at the next rebuild unless found elsewhere)."""
+        path = self.one("SELECT path FROM source_file WHERE id=?", (file_id,))
+        if path is None:
+            return
+        self.con.execute("DELETE FROM source_file WHERE id=? OR substr(path, 1, ?)=?", (file_id, len(path) + 2, path + "::"))
+        self.con.execute("DELETE FROM source WHERE id NOT IN (SELECT DISTINCT source_id FROM source_file)")
         self.con.commit()
 
     def type_counts(self, synth=None):

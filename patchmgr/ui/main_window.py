@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QFrame, QPushButton
                                QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from .. import audio
-from ..library import ptypes, search
+from ..library import layout, ptypes, rebuild, search
 from ..library.db import DB
 from ..library.formats import SYNTH_LABEL
 from ..library.scanner import Scanner, find_deluge_cards, find_library_root
@@ -24,16 +24,17 @@ from .details import Details
 from .session import Session
 from .synths import MODES, READ_SYNTHS, ReadDialog, ReadWorker
 from .type_dialog import TypeDialog
+from .library_dialogs import AlertsDialog, RebuildDialog, ReorganizeDialog
 from .models import TYPE_LABEL, PatchModel, SortProxy
 
 APP = "Patch Manager"
 from patchmgr import __version__
-VERSION = f"{__version__} (M3 Backups and factory presets, by type)"
+VERSION = f"{__version__} (M3b Sources and Patches)"
 SYNTH_ORDER = ["take5", "sub37", "deluge", "syntakt"]
 HELP = """<b>Search</b> — type words to match names, packs and notes, and add filters:<br>
 <code>synth:take5</code> &nbsp; <code>synth:sub37</code> &nbsp; <code>synth:deluge</code> &nbsp; <code>synth:syntakt</code><br>
 <code>tag:pad tag:dark</code> (all must match) &nbsp; <code>rating:&gt;=4</code> &nbsp; <code>rating:0</code><br>
-<code>source:paid</code> / free / factory / unsorted / card &nbsp; <code>pack:audiotent</code> &nbsp; <code>crate:keepers</code><br>
+<code>source:paid</code> / factory / free / user / unsorted / card &nbsp; <code>pack:audiotent</code> &nbsp; <code>crate:keepers</code><br>
 <code>unheard</code> &nbsp; <code>heard</code> &nbsp; <code>preview</code> &nbsp; <code>dupe</code> &nbsp; <code>unrated</code>
 &nbsp; <code>factory</code> &nbsp; <code>onsynth</code> &nbsp; <code>blank</code><br>
 <code>type:bass</code> &nbsp; <code>type:pad</code> &nbsp; <code>type:drums</code> &nbsp; <code>-type:fx</code><br>
@@ -75,9 +76,23 @@ class MainWindow(QMainWindow):
 
         # ---------------- toolbar
         tb = QToolBar("Main"); tb.setMovable(False); self.addToolBar(tb)
-        a = QAction("Scan library", self); a.setShortcut("Ctrl+R"); a.triggered.connect(self.scan); tb.addAction(a)
-        a = QAction("Add a folder…", self); a.triggered.connect(self.add_folder); tb.addAction(a)
-        a = QAction("Library folder…", self); a.triggered.connect(self.choose_root); tb.addAction(a)
+        self.lib_btn = QToolButton(); self.lib_btn.setText("Library ▾"); self.lib_btn.setPopupMode(QToolButton.InstantPopup)
+        lm = QMenu(self)
+        a = lm.addAction("Scan library", self.scan); a.setShortcut("Ctrl+R"); self.addAction(a)
+        lm.addAction("Rebuild Patches…", self.open_rebuild)
+        lm.addAction("Reorganize library…", self.open_reorganize)
+        lm.addAction("Sources changed or missing…", self.open_alerts)
+        lm.addSeparator()
+        lm.addAction("Add a folder…", self.add_folder)
+        lm.addAction("Library folder…", self.choose_root)
+        self.lib_btn.setMenu(lm); tb.addWidget(self.lib_btn)
+        self.rebuild_act = QAction("Rebuild", self); self.rebuild_act.triggered.connect(self.open_rebuild)
+        self.rebuild_act.setToolTip("Bring Patches up to date with Sources: one file per sound, by type")
+        tb.addAction(self.rebuild_act)
+        self.get_btn = QToolButton(); self.get_btn.setText("Get from synth ▾"); self.get_btn.setPopupMode(QToolButton.InstantPopup)
+        self.get_menu = QMenu(self); self.get_menu.aboutToShow.connect(self._fill_get_menu); self.get_btn.setMenu(self.get_menu)
+        self.get_btn.setToolTip("Read a synth and keep the sounds that are in no source in Sources › User")
+        tb.addWidget(self.get_btn)
         tb.addSeparator()
         self.search = QLineEdit(); self.search.setPlaceholderText("Search — e.g.  glass choir   tag:pad   rating:>=4   unheard")
         self.search.setClearButtonEnabled(True); self.search.setMinimumWidth(420)
@@ -208,6 +223,17 @@ class MainWindow(QMainWindow):
         return out
 
     def _first_run(self):
+        root = self.db.setting("library_root")
+        if root and os.path.isdir(root):
+            layout.load_types(self.db, root)
+            if not self.db.setting("reorganize_offered") and not layout.reorganize_plan(root).empty:
+                self.db.set_setting("reorganize_offered", "1")
+                if QMessageBox.question(
+                        self, APP, "<b>New in this version: Sources and Patches.</b><br><br>Each synth folder gets "
+                        "<b>Sources</b> — every pack and factory set as it came, never changed — and <b>Patches</b>, "
+                        "where every sound is kept once, in a folder for its type.<br><br>See what Reorganize would move "
+                        "now? (It shows the plan first; it is also on the Library menu.)") == QMessageBox.Yes:
+                    self.open_reorganize()
         if not self.db.setting("library_root"):
             found = find_library_root()
             if found:
@@ -270,10 +296,60 @@ class MainWindow(QMainWindow):
         total = self.db.one("SELECT COUNT(*) FROM patch")
         self.status_lbl.setText(f"Scanned {p.done:,} files · {total:,} patches in the library · {p.added:,} new"
                                 + (f" · {p.problems} files with problems (see Problems)" if p.problems else ""))
+        root = self.db.setting("library_root")
+        if p.changed or p.missing:
+            QMessageBox.warning(self, APP, f"{p.changed + p.missing} file(s) in Sources changed or went missing outside "
+                                           "the app. Their sounds are kept as they were until you decide.")
+            self.open_alerts()
+        elif root and p.sources_changed and any(layout.is_new_layout(root, s) for s in layout.SYNTH_ORDER):
+            self.open_rebuild(quiet=True)
 
     def _scan_failed(self, msg):
         self._end_thread()
         QMessageBox.critical(self, APP, "The scan stopped with an error:\n\n" + msg[-1500:])
+
+    # ================================================================ Sources and Patches (spec 4.4, 4.5, 4.11)
+    def _root_or_warn(self):
+        root = self.db.setting("library_root")
+        if not root or not os.path.isdir(root):
+            QMessageBox.warning(self, APP, "Choose the library folder first (Library ▾ › Library folder…).")
+            return None
+        return root
+
+    def open_rebuild(self, synths=None, quiet=False):
+        root = self._root_or_warn()
+        if not root or self.thread is not None:
+            return
+        dlg = RebuildDialog(self, self.db, root, synths or layout.SYNTH_ORDER)
+        if dlg.nothing and quiet:
+            return
+        if dlg.exec() and dlg.result_:
+            r = dlg.result_
+            self.status_lbl.setText(f"Patches rebuilt: {r['added']} added, {r['moved']} moved, {r['removed']} taken out")
+            if r["hand"]:
+                self.scan()
+                return
+        self.fill_tree(); self.refresh()
+
+    def open_reorganize(self):
+        root = self._root_or_warn()
+        if not root or self.thread is not None:
+            return
+        dlg = ReorganizeDialog(self, self.db, root)
+        if dlg.exec() and dlg.result_:
+            moved, errors, listed = dlg.result_
+            if listed:
+                self.status_lbl.setText(f"Reorganized. {len(listed)} empty old folders are on the Studio Cleanup list — "
+                                        "run Clean up Studio.cmd when convenient.")
+            self.scan()
+
+    def open_alerts(self):
+        dlg = AlertsDialog(self, self.db)
+        dlg.exec()
+        if dlg.changed_anything:
+            self.scan()
+        else:
+            self.fill_tree()
 
     # ================================================================ sources tree
     def fill_tree(self):
@@ -290,20 +366,31 @@ class MainWindow(QMainWindow):
             it = QTreeWidgetItem([f"{SYNTH_LABEL[syn]}  ({counts.get(syn, 0):,})"]); it.setData(0, Qt.UserRole, {"synth": syn})
             f = it.font(0); f.setBold(True); it.setFont(0, f)
             self.tree.addTopLevelItem(it)
-            for t in ("free", "factory", "paid", "unsorted", "card", "backup"):
+            self._patches_branch(it, syn)
+            src = None
+            for t in ("factory", "paid", "free", "user", "unsorted", "card", "backup"):
                 rows = [r for r in packs if r["synth"] == syn and r["type"] == t]
                 if not rows:
                     continue
+                parent = it
+                if t in layout.LIB_TYPES:
+                    if src is None:
+                        src = QTreeWidgetItem(["Sources  🔒"]); src.setData(0, Qt.UserRole, {"header": "sources"})
+                        src.setToolTip(0, "Every pack, factory set and synth read as it came. The app never changes "
+                                          "these files; Patches is built from them.")
+                        it.addChild(src)
+                    parent = src
                 n = self.db.one("SELECT COUNT(DISTINCT po.patch_id) FROM source s JOIN source_file sf ON sf.source_id=s.id "
                                 "JOIN patch_origin po ON po.file_id=sf.id WHERE s.synth=? AND s.type=?", (syn, t))
                 ti = QTreeWidgetItem([f"{TYPE_LABEL[t]}  ({n:,})"]); ti.setData(0, Qt.UserRole, {"synth": syn, "type": t})
-                it.addChild(ti)
+                parent.addChild(ti)
                 for r in sorted(rows, key=lambda r: (r["pack"] or "").lower()):
                     if r["pack"]:
                         pi = QTreeWidgetItem([f"{r['pack']}  ({r['n']:,})"])
                         pi.setData(0, Qt.UserRole, {"synth": syn, "type": t, "pack": r["pack"]}); ti.addChild(pi)
             it.setExpanded(True)
-        self._type_section()
+        if not self.db.one("SELECT 1 FROM patch_file LIMIT 1"):
+            self._type_section()                     # until Patches has been built, BY TYPE across the library
         other = self.db.q("SELECT kind, COUNT(*) n FROM patch WHERE kind!='sound' GROUP BY kind")
         for r in other:
             label = {"project": "Syntakt projects", "backup": "Whole-synth backups"}.get(r["kind"], r["kind"])
@@ -326,8 +413,33 @@ class MainWindow(QMainWindow):
         np_ = self.db.one("SELECT COUNT(*) FROM source_file WHERE status='problem'") or 0
         pi = QTreeWidgetItem([f"Problems  ({np_})"]); pi.setData(0, Qt.UserRole, {"problems": True})
         self.tree.addTopLevelItem(pi)
+        na = len(self.db.source_alerts())
+        if na:
+            ai = QTreeWidgetItem([f"⚠ Sources changed or missing  ({na})"]); ai.setData(0, Qt.UserRole, {"alerts": True})
+            ai.setForeground(0, Qt.darkRed); self.tree.addTopLevelItem(ai)
         self.tree.blockSignals(False)
         self._reselect(keep)
+
+    def _patches_branch(self, parent, syn):
+        """<Synth> › Patches › one line per type folder, with how many are on the synth (spec 4.5)."""
+        counts = rebuild.counts(self.db, syn)
+        if not counts:
+            return
+        label = SYNTH_LABEL[syn]
+        total = sum(n for n, _ in counts.values()); on = sum(o for _, o in counts.values())
+        pi = QTreeWidgetItem([f"Patches  ({total:,}" + (f" · {on} on the {label}" if on else "") + ")"])
+        pi.setData(0, Qt.UserRole, {"synth": syn, "patches": True})
+        f = pi.font(0); f.setBold(True); pi.setFont(0, f)
+        parent.addChild(pi)
+        order = [rebuild.folder_name(t) for t in ptypes.ALL_TYPES + [ptypes.UNKNOWN]]
+        for folder in sorted(counts, key=lambda x: (order.index(x) if x in order else 99, x)):
+            n, o = counts[folder]
+            ci = QTreeWidgetItem([f"{folder}  ({n:,}" + (f" · {o} on" if o else "") + ")"])
+            ci.setData(0, Qt.UserRole, {"synth": syn, "pfolder": folder})
+            if o:
+                ci.setForeground(0, Qt.darkGreen)
+            pi.addChild(ci)
+        pi.setExpanded(True)
 
     def _type_section(self):
         """BY TYPE, as in the Sample Manager: the app's guess from names, tags and folders, or your own choice."""
@@ -362,9 +474,22 @@ class MainWindow(QMainWindow):
                 self.db.set_user_type(hashes, dlg.result_value[1])
             else:
                 self.db.clear_user_type(hashes)
+            root = self.db.setting("library_root")
+            if root and os.path.isdir(root):
+                layout.save_types(self.db, root)
+                self._move_retyped(root, set(hashes))
             self.fill_tree(); self.refresh()
             self.details.show_row(self.details.row and next((x for x in self.model.rows
                                                              if x["hash"] == self.details.row["hash"]), None))
+
+    def _move_retyped(self, root, hashes):
+        """Set type… moves the file in Patches to its new folder at once; nothing else changes (spec 4.5)."""
+        if not self.db.one("SELECT 1 FROM patch_file LIMIT 1"):
+            return
+        pl = rebuild.plan(self.db, root)
+        only = rebuild.Plan(root=root, moves=[m for m in pl.moves if m[2] in hashes])
+        if only.moves:
+            rebuild.apply(self.db, only)
 
     def _reselect(self, scope):
         def walk(it):
@@ -381,6 +506,8 @@ class MainWindow(QMainWindow):
         if d.get("header"):
             return
         self.scope = d
+        if d.get("alerts"):
+            QTimer.singleShot(0, self.open_alerts); return
         if d.get("problems"):
             self.center.setCurrentIndex(1); self._fill_problems(); return
         self.center.setCurrentIndex(0)
@@ -398,6 +525,11 @@ class MainWindow(QMainWindow):
             m.addAction("Delete crate", lambda: self._delete_crate(cid, d["crate"]))
         if d.get("pack") or d.get("type"):
             m.addAction("Show in Explorer", lambda: self._open_source(d))
+        if d.get("type") == "user" and d.get("pack"):
+            m.addSeparator()
+            m.addAction("Delete user source…", lambda: self._delete_user_source(d))
+        if d.get("pfolder") or d.get("patches"):
+            m.addAction("Show in Explorer", lambda: self._open_patches(d))
         if not m.isEmpty():
             m.exec(self.tree.viewport().mapToGlobal(pos))
 
@@ -406,7 +538,8 @@ class MainWindow(QMainWindow):
         if self.center.currentIndex() == 1:
             return
         text = self.search.text()
-        scope = {k: v for k, v in self.scope.items() if k in ("synth", "type", "pack", "crate_id", "kind", "ptype")}
+        scope = {k: v for k, v in self.scope.items() if k in ("synth", "type", "pack", "crate_id", "kind", "ptype",
+                                                              "pfolder", "patches")}
         if self.scope.get("query"):
             text = (self.scope["query"] + " " + text).strip()
         try:
@@ -612,7 +745,7 @@ class MainWindow(QMainWindow):
             ok = self.session.ready(key)
             init = self.db.last_init(key)
             sub = m.addMenu(f"{label}" + ("" if ok else "  (not connected)"))
-            for mode in ("init", "backup", "refresh"):
+            for mode in ("get", "init", "backup", "refresh"):
                 a = sub.addAction(MODES[mode] + ("…" if mode != "refresh" else ""),
                                   lambda k=key, md=mode: self.open_read(md, k))
                 a.setEnabled(ok and (mode != "refresh" or key != "sub37"))
@@ -622,9 +755,23 @@ class MainWindow(QMainWindow):
                                  else "Not initialized yet")
             info.setEnabled(False)
 
+    def _fill_get_menu(self):
+        m = self.get_menu; m.clear()
+        for key in READ_SYNTHS:
+            ok = self.session.ready(key)
+            a = m.addAction(SYNTH_LABEL[key] + ("…" if ok else "  (not connected)"), lambda k=key: self.open_read("get", k))
+            a.setEnabled(ok)
+
     def open_read(self, mode, key):
         if key is None:
             return
+        root = self.db.setting("library_root")
+        if mode == "get" and root and not layout.is_new_layout(root, key):
+            if QMessageBox.question(self, APP, "Get from synth keeps new sounds in Sources › User, which comes with the "
+                                               "new library layout. Reorganize the library now?") == QMessageBox.Yes:
+                self.open_reorganize()
+            if not layout.is_new_layout(root, key):
+                return
         if self.bg_thread is not None:
             QMessageBox.information(self, APP, "The app is still reading a synth in the background — try again in a "
                                                "minute.")
@@ -636,6 +783,11 @@ class MainWindow(QMainWindow):
             self.banner.hide()
         dlg = ReadDialog(self, mode, key, self.session, self.db, self.db.setting("library_root"))
         dlg.exec()
+        kept = getattr(dlg, "kept", None)
+        if kept and (kept["n_factory"] or kept["n_user"]):
+            self.status_lbl.setText(f"Kept {kept['n_user']} sounds in Sources › User"
+                                    + (f" and {kept['n_factory']} in Sources › Factory" if kept["n_factory"] else ""))
+            self.open_rebuild([key], quiet=True)
         self.fill_tree(); self.refresh()
         rows = self.selected_rows()
         self.details.show_row(rows[0] if rows else None)
@@ -788,14 +940,50 @@ class MainWindow(QMainWindow):
         QApplication.clipboard().setText(text)
 
     def _show_file(self, row):
+        pf = self.db.one("SELECT path FROM patch_file WHERE hash=?", (row["hash"],))
         o = self.db.origins(row["id"])
-        if not o:
+        if not o and not pf:
             return
-        path = o[0]["path"]
+        use_pf = pf and (self.scope.get("pfolder") or self.scope.get("patches") or not o)
+        path = pf if use_pf else o[0]["path"]
+        path = path.split("::")[0]
         if sys.platform == "win32":
             subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
         else:
             QMessageBox.information(self, APP, path)
+
+    def _delete_user_source(self, d):
+        """Sources › User is the one place you can remove from in the app (spec 4.4). It goes to Google Drive's trash."""
+        import shutil
+        root = self._root_or_warn()
+        if not root:
+            return
+        folder = os.path.join(layout.sources_dir(root, d["synth"], "User"), d["pack"])
+        if not os.path.exists(folder):
+            QMessageBox.information(self, APP, f"{folder} is not there any more."); self.scan(); return
+        name, ok = QInputDialog.getText(self, "Delete user source", f"Delete <b>{d['pack']}</b> from "
+                                        f"{SYNTH_LABEL[d['synth']]} › Sources › User? It goes to Google Drive's trash. "
+                                        "Its sounds leave Patches at the next rebuild unless another source has them."
+                                        "<br><br>Type its name to confirm:")
+        if not ok:
+            return
+        if name.strip() != d["pack"]:
+            QMessageBox.information(self, APP, "The name did not match — nothing was deleted."); return
+        try:
+            shutil.rmtree(folder) if os.path.isdir(folder) else os.remove(folder)
+        except OSError as e:
+            QMessageBox.warning(self, APP, f"Could not delete it: {e.strerror or e}"); return
+        self.scan()
+
+    def _open_patches(self, d):
+        root = self.db.setting("library_root")
+        if not root:
+            return
+        p = layout.patches_dir(root, d["synth"])
+        if d.get("pfolder"):
+            p = os.path.join(p, d["pfolder"])
+        if sys.platform == "win32" and os.path.isdir(p):
+            subprocess.Popen(["explorer", os.path.normpath(p)])
 
     def _open_source(self, d):
         r = self.db.q("SELECT sf.path, s.root FROM source s JOIN source_file sf ON sf.source_id=s.id WHERE s.synth=? AND s.type=? "

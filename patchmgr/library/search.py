@@ -14,7 +14,7 @@ STATES = {"unheard", "heard", "onsynth", "preview", "dupe", "unrated", "problem"
 BASE = """
 SELECT p.id, p.hash, p.synth, p.name, p.fmt, p.kind,
        (SELECT s.pack FROM patch_origin po JOIN source_file sf ON sf.id=po.file_id JOIN source s ON s.id=sf.source_id
-         WHERE po.patch_id=p.id ORDER BY CASE s.type WHEN 'paid' THEN 0 WHEN 'free' THEN 1 WHEN 'factory' THEN 2 ELSE 3 END,
+         WHERE po.patch_id=p.id ORDER BY CASE s.type WHEN 'paid' THEN 0 WHEN 'free' THEN 1 WHEN 'factory' THEN 2 WHEN 'user' THEN 3 ELSE 4 END,
          sf.rel LIMIT 1) AS pack,
        (SELECT GROUP_CONCAT(DISTINCT s.type) FROM patch_origin po JOIN source_file sf ON sf.id=po.file_id
          JOIN source s ON s.id=sf.source_id WHERE po.patch_id=p.id) AS types,
@@ -66,6 +66,11 @@ def build(text: str, scope: dict | None = None) -> tuple[str, list]:
         where.append("EXISTS(SELECT 1 FROM patch_origin po JOIN source_file sf ON sf.id=po.file_id JOIN source s "
                      "ON s.id=sf.source_id WHERE po.patch_id=p.id AND " + " AND ".join(cond) + ")")
         args += a
+    if scope.get("pfolder"):
+        where.append("p.hash IN (SELECT hash FROM patch_file WHERE synth=? AND folder=?)")
+        args += [scope.get("synth", ""), scope["pfolder"]]
+    elif scope.get("patches"):
+        where.append("p.hash IN (SELECT hash FROM patch_file WHERE synth=?)"); args.append(scope.get("synth", ""))
     if scope.get("crate_id"):
         where.append("p.hash IN (SELECT hash FROM crate_patch WHERE crate_id=?)"); args.append(scope["crate_id"])
     if scope.get("kind"):
@@ -95,8 +100,8 @@ def build(text: str, scope: dict | None = None) -> tuple[str, list]:
             cond, a = f"COALESCE(m.rating, 0) {op} ?", [int(m.group(2))]
         elif val and key == "source":
             v = val.lower()
-            if v not in ("free", "factory", "paid", "unsorted", "backup", "card"):
-                raise QueryError("source is free, factory, paid, unsorted, backup or card")
+            if v not in ("free", "factory", "paid", "user", "unsorted", "backup", "card"):
+                raise QueryError("source is factory, paid, free, user, unsorted, backup or card")
             cond = ("EXISTS(SELECT 1 FROM patch_origin po JOIN source_file sf ON sf.id=po.file_id JOIN source s "
                     "ON s.id=sf.source_id WHERE po.patch_id=p.id AND s.type=?)")
             a = [v]

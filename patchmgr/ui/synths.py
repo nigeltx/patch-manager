@@ -10,14 +10,15 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                                QMessageBox, QProgressBar, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout)
 
-from ..library import factory
+from ..library import factory, layout
 from ..library.db import DB
 from ..library.formats import SYNTAKT_BANKS, SYNTH_LABEL
 from ..library.scanner import Scanner
 from .models import AMBER, GREEN
 
 READ_SYNTHS = ("take5", "sub37", "syntakt", "deluge")
-MODES = {"init": "Initialize factory presets", "backup": "Back up", "refresh": "Refresh what is on it"}
+MODES = {"get": "Get from synth", "init": "Initialize factory presets", "backup": "Back up",
+         "refresh": "Refresh what is on it"}
 
 HOW = {
     "take5": "The app reads all 256 user and 256 factory programs, one by one. About 80 seconds; nothing is written "
@@ -94,7 +95,7 @@ class ReadWorker(QObject):
         if self.stop:
             raise RuntimeError("Stopped — nothing was saved")
         folder = None
-        if full and reads:
+        if full and reads and self.mode in ("init", "backup"):
             if not self.root:
                 raise RuntimeError("No library folder is set, so there is nowhere to keep the backup")
             label = "Factory read" if self.mode == "init" else "Backup"
@@ -117,9 +118,12 @@ class ReadDialog(QDialog):
         self.rows = []
         label = SYNTH_LABEL[synth]
         self.setWindowTitle(f"{MODES[mode]} — {label}")
-        self.resize(820, 640 if mode == "init" else 300)
+        self.resize(820, 640 if mode in ("init", "get") else 300)
         v = QVBoxLayout(self)
         intro = {
+            "get": f"Reads every slot of the {label} and keeps the sounds that are in no source — ones you made or "
+                   "changed on the synth — in <b>Sources › User</b>, one file each, then adds them to Patches. The green "
+                   "rows are updated too. Nothing is written to the synth.",
             "init": f"Reads the {label}, keeps what it read as a dated backup, then shows every slot so you can say which "
                     "presets are factory. Factory presets get an <b>F</b>, and their slots will be locked when Send to "
                     "slot arrives. Every sound read shows <b>green</b> in the list. Nothing is written to the synth.",
@@ -152,7 +156,7 @@ class ReadDialog(QDialog):
         self.status = QLabel("Press Start when the synth is ready."); self.status.setWordWrap(True); v.addWidget(self.status)
 
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["Factory", "Slot", "Name", "Why"])
+        self.table.setHorizontalHeaderLabels(["Keep" if mode == "get" else "Factory", "Slot", "Name", "Why"])
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -229,6 +233,24 @@ class ReadDialog(QDialog):
         reads = res["reads"]
         self.bar.setRange(0, 1); self.bar.setValue(1)
         where = f" Backup kept in {os.path.basename(res['folder'])}." if res.get("folder") else ""
+        if self.mode == "get":
+            try:
+                fb = factory.parse_banks(self.synth, self.db.factory_banks(self.synth)) if self.synth != "deluge" else set()
+            except ValueError:
+                fb = set()
+            new = factory.new_sounds(self.db, self.synth, reads, fb)
+            self.rows = [factory.ReviewRow(r, "yours", "In no source — made or changed on the synth", True) for r in new]
+            if not new:
+                self.status.setText(f"Read {len(reads)} slots. Every sound on the {SYNTH_LABEL[self.synth]} is already "
+                                    "in a source — nothing new to keep. The green rows are up to date.")
+                self.start_btn.hide(); self.close_btn.setText("Close")
+                return
+            self.status.setText(f"Read {len(reads)} slots. {len(new)} sounds are in no source. Untick any you do not "
+                                "want to keep, then Keep.")
+            self._fill()
+            self.start_btn.hide(); self.apply_btn.setText("Keep in Sources › User"); self.apply_btn.show()
+            self.apply_btn.setDefault(True)
+            return
         if self.mode != "init":
             self.status.setText(f"Read {len(reads)} slots.{where} The green rows now show what is on the "
                                 f"{SYNTH_LABEL[self.synth]}.")
@@ -264,11 +286,14 @@ class ReadDialog(QDialog):
     def _paint(self, i):
         r = self.rows[self.table.item(i, 0).data(Qt.UserRole)]
         for c in range(4):
-            self.table.item(i, c).setBackground(QColor(AMBER if r.tick else "#ffffff"))
+            self.table.item(i, c).setBackground(QColor((GREEN if self.mode == "get" else AMBER) if r.tick else "#ffffff"))
 
     def _count(self, blanks=None):
         blanks = sum(1 for r in self.rows if r.status == "blank") if blanks is None else blanks
         n = sum(1 for r in self.rows if r.tick)
+        if self.mode == "get":
+            self.count.setText(f"{n} of {len(self.rows)} to keep")
+            return
         self.count.setText(f"{n} ticked as factory · {blanks} blank slots not listed")
         if self.synth == "deluge":
             self.status.setText(self.status.text().split(" Tick")[0] + f" Tick the factory presets, then Apply. {n} ticked.")
@@ -296,10 +321,30 @@ class ReadDialog(QDialog):
 
     def apply(self):
         res = self.result_
+        self.kept = None
+        if self.mode == "get":
+            items = [(r.read.hash, r.read.place, r.read.name, r.read.data, False) for r in self.rows if r.tick]
+            self.kept = self._keep(items, set())
+            self.accept()
+            return
         n = factory.apply(self.db, self.synth, self.rows, SYNTH_LABEL[self.synth], res.get("firmware", ""),
                           res.get("folder") or "")
+        if self.root and layout.is_new_layout(self.root, self.synth):
+            items = [(r.read.hash, r.read.place, r.read.name, r.read.data, r.status == "blank") for r in self.rows]
+            self.kept = self._keep(items, {r.read.hash for r in self.rows if r.tick and r.status != "blank"})
         self.status.setText(f"{n} presets marked factory.")
         self.accept()
+
+    def _keep(self, items, factory_hashes):
+        """Write the sounds into Sources (spec 4.4) and add them to the library."""
+        from PySide6.QtGui import QGuiApplication
+        QGuiApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            kept = factory.keep_in_sources(self.db, self.root, self.synth, items, factory_hashes)
+            Scanner(self.db.path, [(self.root, "library")]).run()
+        finally:
+            QGuiApplication.restoreOverrideCursor()
+        return kept
 
     def reject(self):
         if self.thread is not None:

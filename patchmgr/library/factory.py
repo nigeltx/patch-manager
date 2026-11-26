@@ -181,3 +181,76 @@ def apply(db, synth: str, rows: list[ReviewRow], model: str, firmware: str, back
 def remember(db, synth, reads: list[SlotRead], replace_all=True, how="read"):
     db.set_slots(synth, [{"bank": r.bank, "slot": r.slot, "place": r.place, "name": r.name, "hash": r.hash,
                           "info": r.info} for r in reads], how=how, replace_all=replace_all)
+
+
+# ---------------------------------------------------------------- reads into Sources (spec 4.4, 5.3, 5.5)
+def sound_file_name(synth: str, place: str, name: str) -> str:
+    from .rebuild import EXT
+    if synth == "deluge":
+        return os.path.basename(place.replace("\\", "/")) or f"{safe(name)}.XML"
+    return f"{place.replace(':', '')} {safe(name)}{EXT[synth]}"
+
+
+def write_sounds(folder: str, synth: str, items) -> list[str]:
+    """items: (place, name, data). One single-patch file per sound; a clash gets (2)."""
+    from .rebuild import _free, single_file
+    os.makedirs(folder, exist_ok=True)
+    out = []
+    for place, name, data in items:
+        p = _free(os.path.join(folder, sound_file_name(synth, place, name)))
+        tmp = p + ".pmtmp"
+        with open(tmp, "wb") as f:
+            f.write(single_file(synth, data))
+        os.replace(tmp, p)
+        out.append(p)
+    return out
+
+
+def library_hashes(db, synth: str) -> set[str]:
+    """Sounds that already have a source in Factory, Paid, Free or User."""
+    from .layout import LIB_TYPES
+    ph = ",".join("?" * len(LIB_TYPES))
+    return {r["hash"] for r in db.q(
+        "SELECT DISTINCT p.hash FROM patch p JOIN patch_origin po ON po.patch_id=p.id JOIN source_file sf "
+        f"ON sf.id=po.file_id JOIN source s ON s.id=sf.source_id WHERE p.synth=? AND s.type IN ({ph})",
+        (synth, *LIB_TYPES))}
+
+
+def new_sounds(db, synth: str, reads: list[SlotRead], factory_banks: set[int] | None = None) -> list[SlotRead]:
+    """Get from synth (spec 5.3): sounds on the synth that are in no source — once each, blanks left out. Slots in the
+    synth's factory banks are left out too: those sounds are factory, and Initialize puts them in Sources › Factory."""
+    have, seen, out = library_hashes(db, synth), set(), []
+    counts = Counter(r.hash for r in reads)
+    fb = factory_banks or set()
+    for r in reads:
+        if r.blank or r.hash in have or r.hash in seen or (synth != "deluge" and counts[r.hash] >= BLANK_REPEATS) \
+                or r.bank in fb:
+            continue
+        seen.add(r.hash); out.append(r)
+    return out
+
+
+def keep_in_sources(db, root: str, synth: str, items, factory_hashes: set[str], when=None, label=None) -> dict:
+    """Split a read of a synth into Sources: factory sounds → Sources\\Factory\\<date> Factory read, sounds of yours that
+    are in no source → Sources\\User\\<date> <Synth> read. items: (hash, place, name, data, blank). Each sound once."""
+    from .layout import sources_dir, stamp
+    have = library_hashes(db, synth)
+    fac, usr, seen = [], [], set()
+    counts = Counter(i[0] for i in items)
+    for h, place, name, data, blank in items:
+        if blank or h in seen or (synth != "deluge" and counts[h] >= BLANK_REPEATS):
+            continue
+        seen.add(h)
+        if h in factory_hashes:
+            fac.append((place, name, data))
+        elif h not in have:
+            usr.append((place, name, data))
+    st = label or stamp(when)
+    res = {"factory": None, "user": None, "n_factory": len(fac), "n_user": len(usr)}
+    if fac:
+        res["factory"] = os.path.join(sources_dir(root, synth, "Factory"), f"{st} Factory read")
+        write_sounds(res["factory"], synth, fac)
+    if usr:
+        res["user"] = os.path.join(sources_dir(root, synth, "User"), f"{st} {SYNTH_LABEL[synth]} read")
+        write_sounds(res["user"], synth, usr)
+    return res

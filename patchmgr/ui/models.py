@@ -10,7 +10,7 @@ from ..library.formats import SYNTH_LABEL
 COLUMNS = ["", "F", "Name", "Type", "Synth", "Pack", "Source", "Tags", "Rating", "Copies"]
 C_TYPE, C_TAGS, C_RATING, C_COPIES = 3, 7, 8, 9
 GREEN, AMBER, AMBER_TEXT = "#d8f0e4", "#fde7c7", "#7c2d12"
-TYPE_LABEL = {"free": "Free", "factory": "Factory", "paid": "Paid", "unsorted": "Unsorted", "backup": "Backup",
+TYPE_LABEL = {"free": "Free", "factory": "Factory", "paid": "Paid", "user": "User", "unsorted": "Unsorted", "backup": "Backup",
               "card": "Deluge card"}
 STAR = "★"
 

@@ -139,7 +139,10 @@ class Details(QScrollArea):
             if o["bank"]:
                 b = o["bank"]
                 pos = f" · bank {b} prog {o['slot']}" if b <= 16 else f" · factory bank {b - 16} prog {o['slot']}"
-            lines.append(f"<b>{TYPE_LABEL.get(o['type'], o['type'])}</b> {o['rel']}{pos}")
+            lines.append(f"<b>{TYPE_LABEL.get(o['type'], o['type'])}</b> {o['rel'].replace('::', ' › ')}{pos}")
+        pf = self.db.q("SELECT path, folder FROM patch_file WHERE hash=?", (row["hash"],))
+        if pf:
+            lines.insert(0, f"<b>In Patches</b> {pf[0]['folder']} › {os.path.basename(pf[0]['path'])}")
         self.onsynth.setText(self._onsynth_text(row))
         self.where.setText("<br>".join(lines) or "<i>Its file is gone, but the patch and what you added are kept.</i>")
         if m and m["last_heard"]:

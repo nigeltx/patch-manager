@@ -8,7 +8,8 @@ The owner (Nigel) does not code or debug. Keep the code easy for Claude to chang
 plain modules, tests for every core behaviour, no clever metaprogramming.
 
 ## Where things are
-- `patchmgr/library` — file readers, scanner (Studio → Patches), SQLite db, search
+- `patchmgr/library` — file readers, scanner (Studio → Patches, zips in place, fingerprints), SQLite db, search;
+  `layout.py` Sources/Patches folders + Reorganize, `rebuild.py` Patches from Sources (spec v1.10 section 4)
 - `patchmgr/midi` — ports hub, test phrases; `patchmgr/drivers` — Take 5, Sub 37, Syntakt
 - `patchmgr/ui` — windows; `tests` — `python -m pytest -q` must pass (QT_QPA_PLATFORM=offscreen)
 - `packaging` + `.github/workflows/build.yml` — PyInstaller + Inno Setup; every push to main builds an
@@ -16,6 +17,8 @@ plain modules, tests for every core behaviour, no clever metaprogramming.
 - User data: %LOCALAPPDATA%\PatchManager\library.db (never in the install folder)
 
 ## Rules
+- Sources (<Synth>\Sources\Factory|Paid|Free|User) are never written except new reads added by the app;
+  Patches (<Synth>\Patches\<Type>) is written only by rebuild.py, after showing its plan.
 - This repo is the only copy of the code. The old Drive folder (Software → Patch Manager → App) is retired.
 - Bump `patchmgr/__init__.py` `__version__` and `RELEASE_NOTES.txt` for each release.
 - After each release, put the Setup .exe and a source zip (`git archive`, named `Patch Manager X.Y.Z - source.zip`)

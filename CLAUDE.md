@@ -14,6 +14,7 @@ plain modules, tests for every core behaviour, no clever metaprogramming.
 - `patchmgr/library/duplicates.py` + DuplicatesDialog — duplicates in Sources: set-aside copies (table dup_aside,
   view live_origin = the copies that count; read queries use live_origin) (spec v1.12 4.12)
 - `patchmgr/library/userslots.py` + `ui/userslots.py` — Take 5 Clear / Fill user slots, undo (spec v1.11 7.9–7.10)
+- `patchmgr/updater.py` — self-update from GitHub releases (same file in each of Nigel's apps; repo must be public)
 - `patchmgr/ui` — windows; `tests` — `python -m pytest -q` must pass (QT_QPA_PLATFORM=offscreen)
 - `packaging` + `.github/workflows/build.yml` — PyInstaller + Inno Setup; every push to main builds an
   installer and publishes a GitHub release

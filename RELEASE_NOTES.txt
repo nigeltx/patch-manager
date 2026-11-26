@@ -1,3 +1,15 @@
+Updates itself. Version 0.8.1.
+
+Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.
+
+- Patch Manager now checks GitHub for a new version. When there is one it asks: Update now, Later or Skip
+  this version. Update now downloads the installer, closes the app, installs quietly and starts the new
+  version. (The GitHub repository must be public for this to work.)
+- Help ▾ › Update settings… chooses how often it checks: at start and every 6 hours (the default), at start
+  only, or only when you ask. Help ▾ › Check for updates… checks straight away.
+- Help is now a menu: Search and keys, Check for updates, Update settings, About.
+- Nothing is checked or downloaded while a dialog is open; the question waits until it closes.
+
 Duplicates in Sources. Version 0.8.0.
 
 Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.

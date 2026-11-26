@@ -100,7 +100,19 @@ class MainWindow(QMainWindow):
         self.search.textChanged.connect(lambda: self.search_timer.start(200))
         tb.addWidget(self.search)
         a = QAction("Save as smart crate", self); a.triggered.connect(self.save_smart); tb.addAction(a)
-        a = QAction("Help", self); a.triggered.connect(lambda: QMessageBox.information(self, "Search and keys", HELP)); tb.addAction(a)
+        from .. import __version__ as _v
+        from ..updater import UpdateManager
+        self.updates = UpdateManager(self, APP, "nigeltx/patch-manager", "PatchManager-Setup-", _v,
+                                     self.db.setting, self.db.set_setting)
+        self.help_btn = QToolButton(); self.help_btn.setText("Help ▾"); self.help_btn.setPopupMode(QToolButton.InstantPopup)
+        hm = QMenu(self)
+        hm.addAction("Search and keys", lambda: QMessageBox.information(self, "Search and keys", HELP))
+        hm.addSeparator()
+        hm.addAction("Check for updates…", lambda: self.updates.check(asked=True))
+        hm.addAction("Update settings…", self.updates.settings_dialog)
+        hm.addAction(f"About Patch Manager {_v}", lambda: QMessageBox.information(
+            self, APP, f"Patch Manager {_v}\nnigeltx/patch-manager on GitHub"))
+        self.help_btn.setMenu(hm); tb.addWidget(self.help_btn)
         self.synths_btn = QToolButton(); self.synths_btn.setText("Synths ▾")
         self.synths_btn.setPopupMode(QToolButton.InstantPopup)
         self.synths_menu = QMenu(self); self.synths_menu.aboutToShow.connect(self._fill_synths_menu)

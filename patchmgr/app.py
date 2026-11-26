@@ -50,6 +50,7 @@ def main():
 
     win = MainWindow(DB())
     win.show()
+    win.updates.start()                            # checks GitHub for a new version, as set in Help ▾ › Update settings
     return app.exec()
 
 

@@ -34,3 +34,5 @@ Name: "{userdesktop}\Patch Manager"; Filename: "{app}\PatchManager.exe"; Tasks: 
 
 [Run]
 Filename: "{app}\PatchManager.exe"; Description: "Start Patch Manager"; Flags: nowait postinstall skipifsilent
+; a silent install is an update from inside the app (patchmgr/updater.py): start the new version again
+Filename: "{app}\PatchManager.exe"; Flags: nowait; Check: WizardSilent

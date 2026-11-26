@@ -339,3 +339,48 @@ def test_syntakt_factory_banks_default_to_a_to_g(tmp_path):
     assert factory.parse_banks("syntakt", db.factory_banks("syntakt")) == set(range(1, 8))
     db.set_setting("factory_banks_syntakt", "A")              # saved by 0.4.0/0.4.1
     assert db.factory_banks("syntakt") == "A-G"
+
+
+def test_syntakt_identity_ignores_the_slot_but_not_the_name():
+    """26 Nov: G020 and its copy in H127 differed only in bytes 23-24 (bank, slot − 1)."""
+    body = bytearray(b"\xAC\x11\xD3\x03" + bytes(range(60)))
+    g020 = bytes(body[:23]) + bytes([6, 19]) + bytes(body[25:])
+    h127 = bytes(body[:23]) + bytes([7, 126]) + bytes(body[25:])
+    a = read_elektron(make_stsnd("BASS SLAP MY B", g020), "a.stsnd")[0]
+    b = read_elektron(make_stsnd("BASS SLAP MY B", h127), "b.stsnd")[0]
+    c = read_elektron(make_stsnd("MY SLAP", h127), "c.stsnd")[0]
+    edited = bytearray(h127); edited[40] ^= 1
+    d = read_elektron(make_stsnd("BASS SLAP MY B", bytes(edited)), "d.stsnd")[0]
+    assert a.sound_hash == b.sound_hash                       # a copy in another slot: the same sound
+    assert c.sound_hash != a.sound_hash                       # renamed: yours
+    assert d.sound_hash != a.sound_hash                       # edited: yours
+
+
+def test_old_syntakt_identities_are_migrated(tmp_path):
+    p = str(tmp_path / "lib.db")
+    db = DB(p)
+    data = make_stsnd("BLOMP", b"\xAC\x11\xD3\x03" + bytes(range(60)))
+    db.con.execute("INSERT INTO patch(synth, name, hash, data, fmt, kind) VALUES('syntakt','BLOMP','oldhash',?, 'stsnd','sound')",
+                   (data,))
+    db.con.execute("INSERT INTO meta(hash, rating) VALUES('oldhash', 4)")
+    db.con.execute("INSERT INTO type_user(hash, types) VALUES('oldhash', ',Bass,')")
+    db.con.execute("UPDATE setting SET value='1' WHERE key='identity_syntakt'")
+    db.con.commit()
+    db2 = DB(p)
+    new = read_elektron(data, "x.stsnd")[0].sound_hash
+    assert db2.one("SELECT hash FROM patch WHERE name='BLOMP'") == new
+    assert db2.one("SELECT rating FROM meta WHERE hash=?", (new,)) == 4
+    assert db2.one("SELECT types FROM type_user WHERE hash=?", (new,)) == ",Bass,"
+
+
+def test_get_never_keeps_a_copy_of_a_factory_slot(tmp_path):
+    """A user slot holding an exact copy of a factory-bank sound is not yours, even before any factory source exists."""
+    dbp = str(tmp_path / "lib.db")
+    db = DB(dbp)
+    t = Take5(FakeTake5())
+    reads = t.read_slots(banks=[1, 17])
+    copy = reads[16]                                          # F1-01
+    reads[0] = factory.SlotRead("take5", 1, 1, "U1-01", copy.name, copy.data, copy.hash)
+    db.set_slots("take5", [{"bank": r.bank, "slot": r.slot, "hash": r.hash} for r in reads])
+    new = factory.new_sounds(db, "take5", reads, {17})
+    assert len(new) == 15 and copy.hash not in {r.hash for r in new}

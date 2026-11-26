@@ -151,7 +151,8 @@ class Scanner:
         for dirpath, dirnames, filenames in os.walk(root):
             rel_dir = os.path.relpath(dirpath, root)
             parts = [] if rel_dir == "." else rel_dir.split(os.sep)
-            dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d != "System Volume Information")
+            dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d != "System Volume Information"
+                                 and not (kind == "library" and d.lower() == "archive"))   # Studio Cleanup's Archive
             if kind == "library" and parts[:1] == [APP_FOLDER]:
                 # only the dated backup folders under _Patch Manager\Backups\<synth> are read
                 keep = {1: {"Backups"}}.get(len(parts))

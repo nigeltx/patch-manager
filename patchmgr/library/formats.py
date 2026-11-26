@@ -237,6 +237,20 @@ def read_deluge(data: bytes, path: str) -> list[Patch]:
 
 # ---------------------------------------------------------------- Elektron Syntakt
 
+SYNTAKT_SLOT_BYTES = (23, 24)          # the pool bank (0–7 = A–H) and slot − 1 the sound was saved from
+
+
+def syntakt_identity(name: str, body: bytes) -> str:
+    """A Syntakt sound's identity: its name and its sound data, leaving out the two bytes that only record which
+    pool slot it was saved from — so G020 and a copy of it in H127 are the same sound, and a copy you renamed is
+    a sound of your own (Nigel, 26 Nov 2026)."""
+    b = bytearray(body)
+    for i in SYNTAKT_SLOT_BYTES:
+        if i < len(b):
+            b[i] = 0
+    return sha(b"syntakt2" + (name or "").encode("utf-8") + b"\x00" + bytes(b))
+
+
 def read_elektron(data: bytes, path: str) -> list[Patch]:
     try:
         z = zipfile.ZipFile(io.BytesIO(data))
@@ -249,7 +263,7 @@ def read_elektron(data: bytes, path: str) -> list[Patch]:
     body = b"".join(z.read(n) for n in sorted(names) if n != "manifest.json")
     tags = [t.title() for t in (man.get("MetaInfo") or {}).get("Tags", []) if isinstance(t, str)]
     if ftype == "Sound":
-        return [Patch("syntakt", payload, data, sha(b"syntakt" + body), "stsnd", tags=tags)]
+        return [Patch("syntakt", payload, data, syntakt_identity(payload, body), "stsnd", tags=tags)]
     if ftype == "Project":
         return [Patch("syntakt", name_from_file(path), data, sha(b"syntaktprj" + body), "stprj", kind="project")]
     raise FormatError(f"an Elektron file of type '{ftype}', not a sound or project")

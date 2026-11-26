@@ -264,9 +264,20 @@ def test_initialize_splits_factory_and_yours_into_sources(old, tmp_path):
     d.bank_set = {17}                                                     # F1 is factory
     d._done(res)
     d.apply()
-    assert d.kept["n_factory"] == 16 and d.kept["n_user"] == 512 - 16
+    assert d.kept["n_factory"] == 16 and d.kept["n_user"] == 256      # sounds from factory banks are never yours
     fac = d.kept["factory"]
     assert "Sources" in fac and len(os.listdir(fac)) == 16
     assert db.one("SELECT COUNT(*) FROM patch p WHERE p.name LIKE 'U1P%' AND EXISTS(SELECT 1 FROM patch_origin po "
                   "JOIN source_file sf ON sf.id=po.file_id JOIN source s ON s.id=sf.source_id WHERE po.patch_id=p.id "
                   "AND s.type='factory')") == 0                              # your sounds are not factory
+
+
+def test_cleanup_archive_folders_are_not_read(old, tmp_path):
+    root, _ = old
+    db_path = str(tmp_path / "lib.db")
+    reorg(root, db_path)
+    a = root / "Take 5" / "Sources" / "User" / "Archive" / "old read"
+    a.mkdir(parents=True)
+    (a / "x.syx").write_bytes(t5_program(9, 9, "Archived One"))
+    scan(db_path, root)
+    assert DB(db_path).one("SELECT COUNT(*) FROM patch WHERE name='Archived One'") == 0

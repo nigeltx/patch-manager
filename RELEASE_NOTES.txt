@@ -1,3 +1,18 @@
+Factory duplicates. Version 0.7.1.
+
+Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.
+
+- A user slot holding an exact copy of a factory sound is never saved as one of yours — by Get from synth,
+  Initialize, Clear user slots or Reorganize. A copy you renamed, or edited, is yours and is kept.
+- This now also holds when the factory sound is in no factory file yet: any sound last seen in one of the
+  synth's factory slots (Take 5 F1-F16, Sub 37 banks 1-9, Syntakt A-G) counts as factory.
+- Syntakt: a sound's identity no longer includes the pool slot it was saved from. The same sound in G020 and
+  in H127 used to look like two different sounds, which is how two factory copies reached Sources > User.
+  The first start re-identifies every Syntakt sound; ratings, tags, crates, types and green rows follow it,
+  and a Rebuild takes the duplicate out of Patches.
+- Folders called Archive (where Clean up Studio.cmd puts things) are not read.
+- Syntakt and Deluge files copied into Sources get tidy names (H127 BASS SLAP MY B.stsnd).
+
 Take 5 user slots. Version 0.7.0.
 
 Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.

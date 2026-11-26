@@ -93,6 +93,40 @@ class DB:
             for n in names:
                 self.con.execute("INSERT OR IGNORE INTO tag(name, grp) VALUES(?, ?)", (n, grp))
         self.con.commit()
+        self._migrate_identity()
+
+    # ---------------------------------------------------------------- identity changes (spec 4.3)
+    HASH_TABLES = [("meta", "hash"), ("patch_tag", "hash"), ("crate_patch", "hash"), ("preview", "hash"),
+                   ("slot_state", "hash"), ("type_guess", "hash"), ("type_user", "hash"), ("patch_file", "hash"),
+                   ("journal", "before_hash"), ("journal", "after_hash")]
+
+    def _migrate_identity(self):
+        """0.7.1: a Syntakt sound's identity leaves out the pool slot it was saved from and includes its name.
+        Every Syntakt sound is re-identified from its stored data; ratings, tags, crates, types and green rows follow
+        it, and sounds that turn out to be the same are merged."""
+        if self.setting("identity_syntakt", "1") == "2":
+            return
+        from .formats import FormatError, read_elektron
+        rows = self.q("SELECT id, hash, data FROM patch WHERE synth='syntakt' AND kind='sound'")
+        for r in rows:
+            try:
+                new = read_elektron(bytes(r["data"]), "x.stsnd")[0].sound_hash
+            except (FormatError, IndexError):
+                continue
+            if new == r["hash"]:
+                continue
+            keep = self.one("SELECT id FROM patch WHERE hash=?", (new,))
+            if keep is None:
+                self.con.execute("UPDATE patch SET hash=? WHERE id=?", (new, r["id"]))
+            else:                                   # the same sound under another slot: merge into it
+                self.con.execute("UPDATE OR IGNORE patch_origin SET patch_id=? WHERE patch_id=?", (keep, r["id"]))
+                self.con.execute("DELETE FROM patch WHERE id=?", (r["id"],))
+            for table, col in self.HASH_TABLES:
+                self.con.execute(f"UPDATE OR IGNORE {table} SET {col}=? WHERE {col}=?", (new, r["hash"]))
+                if table != "journal":
+                    self.con.execute(f"DELETE FROM {table} WHERE {col}=?", (r["hash"],))
+        self.con.execute("INSERT OR REPLACE INTO setting(key, value) VALUES('identity_syntakt', '2')")
+        self.con.commit()
 
     # ---------------------------------------------------------------- generic
     def q(self, sql, args=()):

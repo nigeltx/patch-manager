@@ -188,7 +188,10 @@ def sound_file_name(synth: str, place: str, name: str) -> str:
     from .rebuild import EXT
     if synth == "deluge":
         return os.path.basename(place.replace("\\", "/")) or f"{safe(name)}.XML"
-    return f"{place.replace(':', '')} {safe(name)}{EXT[synth]}"
+    place = os.path.basename(place.replace("\\", "/")).replace(":", "")
+    if place.lower().endswith(EXT[synth].lower()):          # already a file name, e.g. "H127 BASS SLAP MY B.stsnd"
+        return place
+    return f"{place} {safe(name)}{EXT[synth]}"
 
 
 def write_sounds(folder: str, synth: str, items) -> list[str]:
@@ -216,6 +219,19 @@ def library_hashes(db, synth: str) -> set[str]:
         (synth, *LIB_TYPES))}
 
 
+def factory_slot_hashes(db, synth: str) -> set[str]:
+    """Sounds last seen in the synth's factory slots (Table 4.7). A copy of one of these in a user slot is a duplicate
+    of a factory sound, never one of yours — unless you renamed it, which gives it a different identity."""
+    try:
+        banks = parse_banks(synth, db.factory_banks(synth)) if synth != "deluge" else set()
+    except ValueError:
+        return set()
+    if not banks:
+        return set()
+    ph = ",".join("?" * len(banks))
+    return {r["hash"] for r in db.q(f"SELECT hash FROM slot_state WHERE synth=? AND bank IN ({ph})", (synth, *banks))}
+
+
 def blank_hashes(db, synth: str) -> set[str]:
     """Sounds marked blank in the library — init programs, including the one you made for Clear user slots."""
     return {r["hash"] for r in db.q("SELECT hash FROM patch WHERE synth=? AND blank=1", (synth,))}
@@ -224,7 +240,8 @@ def blank_hashes(db, synth: str) -> set[str]:
 def new_sounds(db, synth: str, reads: list[SlotRead], factory_banks: set[int] | None = None) -> list[SlotRead]:
     """Get from synth (spec 5.3): sounds on the synth that are in no source — once each, blanks left out. Slots in the
     synth's factory banks are left out too: those sounds are factory, and Initialize puts them in Sources › Factory."""
-    have, seen, out = library_hashes(db, synth) | blank_hashes(db, synth), set(), []
+    have = library_hashes(db, synth) | blank_hashes(db, synth) | factory_slot_hashes(db, synth)
+    seen, out = set(), []
     counts = Counter(r.hash for r in reads)
     fb = factory_banks or set()
     for r in reads:
@@ -239,7 +256,7 @@ def keep_in_sources(db, root: str, synth: str, items, factory_hashes: set[str], 
     """Split a read of a synth into Sources: factory sounds → Sources\\Factory\\<date> Factory read, sounds of yours that
     are in no source → Sources\\User\\<date> <Synth> read. items: (hash, place, name, data, blank). Each sound once."""
     from .layout import sources_dir, stamp
-    have = library_hashes(db, synth) | blank_hashes(db, synth)
+    have = library_hashes(db, synth) | blank_hashes(db, synth) | factory_slot_hashes(db, synth)
     fac, usr, seen = [], [], set()
     counts = Counter(i[0] for i in items)
     for h, place, name, data, blank in items:

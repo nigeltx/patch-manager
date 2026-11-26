@@ -145,12 +145,17 @@ def test_initialize_end_to_end(tmp_path):
     folder = factory.backup_folder(str(root), "take5", "Factory read")
     factory.write_backup(folder, "take5", reads)
     assert sorted(os.listdir(folder)) == ["F01.syx", "README.txt", "U01.syx", "U02.syx"]
+    assert os.path.dirname(folder) == str(root / "Take 5" / "Backups")      # beside Sources and Patches
     Scanner(dbp, [(str(root), "library")]).run()
     db = DB(dbp)
-    src = db.q("SELECT type, pack FROM source WHERE type='backup'")
-    assert len(src) == 1 and src[0]["pack"].endswith("Factory read")
+    assert db.q("SELECT 1 FROM source WHERE type='backup'") == []         # a backup is never a source
     rows = factory.review(reads, factory.parse_banks("take5", "F1-F16"), db.maker_hashes("take5"), db.maker_pack)
     assert sum(r.tick for r in rows) == 17                    # bank F1 plus U2-01 from the maker's file
+    # as the dialog does: the sounds go into Sources first, then they are marked
+    items = [(r.read.hash, r.read.place, r.read.name, r.read.data, False) for r in rows]
+    kept = factory.keep_in_sources(db, str(root), "take5", items, {r.read.hash for r in rows if r.tick})
+    assert kept["n_factory"] == 17 and kept["n_user"] == 31   # U1 and U2 less the maker's U2-01
+    Scanner(dbp, [(str(root), "library")]).run()
     n = factory.apply(db, "take5", rows, "Take 5", "2.1.0", folder)
     assert n == 17
     fac = db.q(*search.build("factory", {}))
@@ -270,8 +275,8 @@ def test_read_worker_backs_up_and_remembers(tmp_path):
     assert len(res["reads"]) == 512 and os.path.isdir(res["folder"])
     db = DB(dbp)
     assert len(db.slot_rows("take5")) == 512
-    assert db.one("SELECT COUNT(*) FROM patch WHERE synth='take5'") == 512
-    assert db.one("SELECT type FROM source WHERE synth='take5'") == "backup"
+    assert res["folder"].startswith(str(root / "Take 5" / "Backups"))
+    assert db.one("SELECT COUNT(*) FROM patch WHERE synth='take5'") == 0        # a backup is not read into the library
 
 
 def test_syntakt_reads_banks_and_skips_unchanged_slots():

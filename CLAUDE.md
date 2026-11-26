@@ -18,7 +18,8 @@ plain modules, tests for every core behaviour, no clever metaprogramming.
 - User data: %LOCALAPPDATA%\PatchManager\library.db (never in the install folder)
 
 ## Rules
-- Sources (<Synth>\Sources\Factory|Paid|Free|User) are never written except new reads added by the app;
+- Each synth folder: Sources (Factory|Paid|Free|User), Patches (<Type>), Backups (dated dumps — never a source, never scanned).
+- Sources are never written except new reads added by the app;
   Patches (<Synth>\Patches\<Type>) is written only by rebuild.py, after showing its plan.
 - This repo is the only copy of the code. The old Drive folder (Software → Patch Manager → App) is retired.
 - Bump `patchmgr/__init__.py` `__version__` and `RELEASE_NOTES.txt` for each release.

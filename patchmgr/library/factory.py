@@ -3,7 +3,7 @@
 A read of a synth is a list of SlotRead, one per slot (or per preset file on the Deluge). From a read the app can:
 - review it: which slots hold factory presets (in a factory bank, or matching a maker's Factory file), which are
   yours, and which are blank init sounds;
-- keep it as a dated backup source under Studio\\Patches\\_Patch Manager\\Backups\\<synth>\\<folder>;
+- keep it as a dated backup under Studio\\Patches\\<Synth>\\Backups\\<folder> (not a source);
 - apply it: mark factory presets, remember what each slot holds (the green rows), and record the run.
 """
 from __future__ import annotations
@@ -117,8 +117,10 @@ def safe(name: str) -> str:
 
 
 def backup_folder(library_root: str, synth: str, label: str, when=None) -> str:
+    """<Synth>\\Backups\\<date> <label>: a point-in-time dump of the synth. Never a source (Nigel, 26 Nov 2026)."""
+    from .layout import backups_dir
     stamp = time.strftime("%Y-%m-%d %H%M", time.localtime(when or time.time()))
-    return os.path.join(library_root, "_Patch Manager", "Backups", SYNTH_LABEL[synth], f"{stamp} {label}")
+    return os.path.join(backups_dir(library_root, synth), f"{stamp} {label}")
 
 
 def write_backup(folder: str, synth: str, reads: list[SlotRead], whole: bytes | None = None) -> list[str]:
@@ -252,11 +254,12 @@ def new_sounds(db, synth: str, reads: list[SlotRead], factory_banks: set[int] | 
     return out
 
 
-def keep_in_sources(db, root: str, synth: str, items, factory_hashes: set[str], when=None, label=None) -> dict:
+def keep_in_sources(db, root: str, synth: str, items, factory_hashes: set[str], when=None, label=None,
+                    not_yours: set[str] = frozenset()) -> dict:
     """Split a read of a synth into Sources: factory sounds → Sources\\Factory\\<date> Factory read, sounds of yours that
     are in no source → Sources\\User\\<date> <Synth> read. items: (hash, place, name, data, blank). Each sound once."""
     from .layout import sources_dir, stamp
-    have = library_hashes(db, synth) | blank_hashes(db, synth) | factory_slot_hashes(db, synth)
+    have = library_hashes(db, synth) | blank_hashes(db, synth) | factory_slot_hashes(db, synth) | set(not_yours)
     fac, usr, seen = [], [], set()
     counts = Counter(i[0] for i in items)
     for h, place, name, data, blank in items:

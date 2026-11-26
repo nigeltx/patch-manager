@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 from .db import DB
 from .formats import (AUDIO_EXT, PATCH_EXT, SYNTH_FOLDERS, FormatError, read_file)
-from .layout import APP_FOLDER, IGNORED_FILES, LIB_TYPES, LOCKED_TYPES, PATCHES, SAMPLES, SOURCES, app_dir
+from .layout import APP_FOLDER, BACKUPS, IGNORED_FILES, LIB_TYPES, LOCKED_TYPES, PATCHES, SAMPLES, SOURCES, app_dir
 
 TYPES = {t: t for t in LIB_TYPES}
 ZIP_SEP = "::"
@@ -84,8 +84,8 @@ def find_deluge_cards() -> list[str]:
 
 def classify(rel_parts: list[str]):
     """-> (synth, type, pack) from the path below the library root (the last part is the file name)."""
-    if rel_parts[:2] == [APP_FOLDER, "Backups"] and len(rel_parts) >= 5:
-        return SYNTH_FOLDERS.get(rel_parts[2].lower()), "backup", rel_parts[3]
+    if rel_parts[:1] == [APP_FOLDER]:
+        return None, "skip", None
     synth = SYNTH_FOLDERS.get(rel_parts[0].lower()) if rel_parts else None
     if synth is None:
         return None, "unsorted", None
@@ -95,7 +95,7 @@ def classify(rel_parts: list[str]):
             pack = rel_parts[3] if len(rel_parts) >= 5 else None
             return synth, TYPES[rel_parts[2].lower()], pack
         return synth, "unsorted", None
-    if sub in (PATCHES.lower(), SAMPLES.lower()):
+    if sub in (PATCHES.lower(), SAMPLES.lower(), BACKUPS.lower()):
         return synth, "skip", None
     if sub in TYPES:                                              # the old layout, before Reorganize
         pack = rel_parts[2] if len(rel_parts) >= 4 else None
@@ -153,15 +153,11 @@ class Scanner:
             parts = [] if rel_dir == "." else rel_dir.split(os.sep)
             dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d != "System Volume Information"
                                  and not (kind == "library" and d.lower() == "archive"))   # Studio Cleanup's Archive
-            if kind == "library" and parts[:1] == [APP_FOLDER]:
-                # only the dated backup folders under _Patch Manager\Backups\<synth> are read
-                keep = {1: {"Backups"}}.get(len(parts))
-                if keep is not None:
-                    dirnames[:] = [d for d in dirnames if d in keep]
-                if len(parts) < 4:
-                    filenames = []
+            if kind == "library" and not parts:
+                dirnames[:] = [d for d in dirnames if d != APP_FOLDER]          # the app's own files: never read
             if kind == "library" and len(parts) == 1 and SYNTH_FOLDERS.get(parts[0].lower()):
-                dirnames[:] = [d for d in dirnames if d.lower() not in (PATCHES.lower(), SAMPLES.lower())]
+                # Patches is written by rebuild.py; Backups are dumps of the synth, not sources; Samples are audio
+                dirnames[:] = [d for d in dirnames if d.lower() not in (PATCHES.lower(), SAMPLES.lower(), BACKUPS.lower())]
             if kind == "card" and not parts:
                 dirnames[:] = [d for d in dirnames if d.upper() == "SYNTHS"]
             for f in sorted(filenames):

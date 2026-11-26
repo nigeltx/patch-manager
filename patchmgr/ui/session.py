@@ -10,6 +10,7 @@ from ..drivers.deluge import Deluge
 from ..drivers.sub37 import Sub37
 from ..drivers.syntakt import Syntakt
 from ..drivers.take5 import Take5
+from ..library import layout
 from ..midi import hub as midihub
 from ..midi.phrases import PhrasePlayer, Transport, all_notes_off
 
@@ -92,7 +93,7 @@ class Session(QObject):
             root = self.db.setting("library_root") or ""
             scratch = self.db.setting("syntakt_scratch", "H128")
             drv = Syntakt(dev, ch, (scratch[0].upper(), int(scratch[1:])),
-                          backup_dir=os.path.join(root, "_Patch Manager", "Backups", "Syntakt") if root else None,
+                          backup_dir=os.path.join(layout.backups_dir(root, "syntakt"), "Audition slot") if root else None,
                           owned_name=self.db.setting("syntakt_owned"))
             drv.on_owned = lambda name: self.db.set_setting("syntakt_owned", name)
         self.drivers[key] = drv

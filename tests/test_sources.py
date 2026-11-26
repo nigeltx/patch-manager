@@ -77,10 +77,12 @@ def test_reorganize_moves_once_and_lists_old_folders(old):
     ur = root / "Take 5" / "Sources" / "User" / "2026-11-22 2122 Take 5 read"
     assert sorted(p.name for p in fr.iterdir()) == ["U1-01 Matterhorn Pad.syx"]      # factory sounds only
     assert sorted(p.name for p in ur.iterdir()) == ["U1-03 My Own Lead.syx"]         # yours, in no other source
-    assert (root / "_Patch Manager" / "Backups" / "Take 5" / "2026-11-22 2122 Factory read").is_dir()  # read kept
+    assert (root / "Take 5" / "Backups" / "2026-11-22 2122 Factory read" / "U01.syx").is_file()  # the dump, moved
+    assert not (root / "_Patch Manager" / "Backups" / "Take 5" / "2026-11-22 2122 Factory read").exists()
     assert (root / "Sub 37" / "Sources" / "User").is_dir() and (root / "Take 5" / "Patches").is_dir()
     cl = (tmp / "Studio" / "Software" / "Studio Cleanup" / "Cleanup list.txt").read_text(encoding="utf-8")
     assert "Patches\\Take 5\\Factory" in cl.replace("/", "\\") and "Patches\\Take 5\\Free" in cl.replace("/", "\\")
+    assert "Patches\\_Patch Manager\\Backups" in cl.replace("/", "\\")
     assert layout.reorganize_plan(str(root)).empty                       # a second run has nothing to do
 
 
@@ -259,14 +261,14 @@ def test_initialize_splits_factory_and_yours_into_sources(old, tmp_path):
         def ready(self, k):
             return True
     res = ReadWorker("init", "take5", Sess(), db_path, str(root))._run()
-    assert "Backups" in res["folder"]                                     # the raw read is kept as before
+    assert os.path.join("Take 5", "Backups") in res["folder"]              # the raw read: a dump, not a source
     d = ReadDialog(None, "init", "take5", Sess(), db, str(root))
-    d.bank_set = {17}                                                     # F1 is factory
+    d.bank_set = set(range(17, 33))                                       # F1–F16, the default
     d._done(res)
     d.apply()
-    assert d.kept["n_factory"] == 16 and d.kept["n_user"] == 256      # sounds from factory banks are never yours
+    assert d.kept["n_factory"] == 256 and d.kept["n_user"] == 256     # sounds from factory banks are never yours
     fac = d.kept["factory"]
-    assert "Sources" in fac and len(os.listdir(fac)) == 16
+    assert "Sources" in fac and len(os.listdir(fac)) == 256
     assert db.one("SELECT COUNT(*) FROM patch p WHERE p.name LIKE 'U1P%' AND EXISTS(SELECT 1 FROM patch_origin po "
                   "JOIN source_file sf ON sf.id=po.file_id JOIN source s ON s.id=sf.source_id WHERE po.patch_id=p.id "
                   "AND s.type='factory')") == 0                              # your sounds are not factory

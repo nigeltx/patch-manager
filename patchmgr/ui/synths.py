@@ -101,9 +101,7 @@ class ReadWorker(QObject):
             label = "Factory read" if self.mode == "init" else "Backup"
             folder = factory.backup_folder(self.root, self.synth, label)
             self._p(0, 0, "Saving the backup files…")
-            factory.write_backup(folder, self.synth, reads, whole)
-            self._p(0, 0, "Adding the backup to the library…")
-            Scanner(self.db_path, [(self.root, "library")]).run()
+            factory.write_backup(folder, self.synth, reads, whole)      # a dump of the synth; never read as a source
         if self.mode != "init":
             factory.remember(db, self.synth, reads, replace_all=not self.stop, how="backup" if full else "read")
         return {"reads": reads, "folder": folder, "firmware": firmware}
@@ -127,8 +125,9 @@ class ReadDialog(QDialog):
             "init": f"Reads the {label}, keeps what it read as a dated backup, then shows every slot so you can say which "
                     "presets are factory. Factory presets get an <b>F</b>, and their slots will be locked when Send to "
                     "slot arrives. Every sound read shows <b>green</b> in the list. Nothing is written to the synth.",
-            "backup": f"Reads the {label} and keeps everything on it as a dated backup source in the library "
-                      "(_Patch Manager › Backups). The green rows are updated too. Nothing is written to the synth.",
+            "backup": f"Reads the {label} and keeps everything on it as a dated backup in {label} › Backups — a dump to put "
+                      "the synth back as it was, not a source. The green rows are updated too. Nothing is written to "
+                      "the synth.",
             "refresh": f"Reads the {label} again so the green rows show what is on it now. No backup is kept.",
         }[mode]
         last = db.last_init(synth)
@@ -327,20 +326,23 @@ class ReadDialog(QDialog):
             self.kept = self._keep(items, set())
             self.accept()
             return
+        if self.root and layout.is_new_layout(self.root, self.synth):
+            # the sounds go into Sources first, so the library has them to mark (backups are never read)
+            items = [(r.read.hash, r.read.place, r.read.name, r.read.data, r.status == "blank") for r in self.rows]
+            in_factory_slots = {r.read.hash for r in self.rows if r.read.bank in (self.bank_set or set())}
+            self.kept = self._keep(items, {r.read.hash for r in self.rows if r.tick and r.status != "blank"},
+                                   in_factory_slots)
         n = factory.apply(self.db, self.synth, self.rows, SYNTH_LABEL[self.synth], res.get("firmware", ""),
                           res.get("folder") or "")
-        if self.root and layout.is_new_layout(self.root, self.synth):
-            items = [(r.read.hash, r.read.place, r.read.name, r.read.data, r.status == "blank") for r in self.rows]
-            self.kept = self._keep(items, {r.read.hash for r in self.rows if r.tick and r.status != "blank"})
         self.status.setText(f"{n} presets marked factory.")
         self.accept()
 
-    def _keep(self, items, factory_hashes):
+    def _keep(self, items, factory_hashes, not_yours=frozenset()):
         """Write the sounds into Sources (spec 4.4) and add them to the library."""
         from PySide6.QtGui import QGuiApplication
         QGuiApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            kept = factory.keep_in_sources(self.db, self.root, self.synth, items, factory_hashes)
+            kept = factory.keep_in_sources(self.db, self.root, self.synth, items, factory_hashes, not_yours=not_yours)
             Scanner(self.db.path, [(self.root, "library")]).run()
         finally:
             QGuiApplication.restoreOverrideCursor()

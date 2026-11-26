@@ -125,8 +125,9 @@ class ReorganizeDialog(QDialog):
         self.resize(940, 600)
         v = QVBoxLayout(self)
         intro = QLabel("Moves your patch folders into the new layout once: each synth gets <b>Sources</b> (Factory, Paid, "
-                       "Free, User) and <b>Patches</b>. Folders are moved, never changed. The factory reads in "
-                       "<i>_Patch Manager › Backups</i> stay where they are; their factory sounds are copied into "
+                       "Free, User), <b>Patches</b> and <b>Backups</b>. Folders are moved, never changed. Backups from "
+                       "<i>_Patch Manager › Backups</i> move to each synth's own Backups folder; backups are dumps of the "
+                       "synth, never sources. Before a factory read moves, its factory sounds are copied into "
                        "Sources › Factory and your own sounds into Sources › User. Folders left empty go on the Studio "
                        "Cleanup list. Nothing happens until you press <b>Reorganize</b>.")
         intro.setWordWrap(True); intro.setTextFormat(Qt.RichText); v.addWidget(intro)

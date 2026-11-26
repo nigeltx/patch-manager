@@ -190,7 +190,7 @@ class Syntakt:
                 p.lines.append(("ok", f"Scratch slot {self.bank}{sl} holds '{here['name']}' from an earlier audition"))
             else:
                 p.lines.append(("warn", f"Scratch slot {self.bank}{sl} holds '{here['name']}', which the app did not put "
-                                        "there. It will be saved to _Patch Manager\\Backups\\Syntakt before it is used."))
+                                        "there. It will be saved to Syntakt\\Backups before it is used."))
                 self.foreign[sl] = here["name"]
         p.lines.append(("ok", f"Each sound you pick goes to {self.bank}{self.slot}. On the Syntakt, leave the SOUND "
                               f"BROWSER on {self.bank}{self.slot} and press FUNC + YES to hear it"))

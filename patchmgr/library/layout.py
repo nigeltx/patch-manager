@@ -2,11 +2,12 @@
 
     Patches\\<Synth>\\Sources\\Factory|Paid|Free|User\\<pack> …   everything as it came; the app never changes it
     Patches\\<Synth>\\Patches\\<Type>\\<name>.<ext>                   one file per unique sound, written by rebuild.py
+    Patches\\<Synth>\\Backups\\<date> <what>\\…                       point-in-time dumps of the synth; never a source, not read
     Patches\\<Synth>\\Samples\\…                                      audio packs (not sounds); not read
     Patches\\_Patch Manager\\…                                        the app's own files
 
 Reorganize moves the old layout (Free / Factory / Paid straight under each synth, factory reads under
-_Patch Manager\\Backups) into the new one, once. It only moves folders and files; it never changes one.
+_Patch Manager\\Backups) into the new one, once; backups go to <Synth>\\Backups. It only moves folders and files; it never changes one.
 """
 from __future__ import annotations
 
@@ -18,7 +19,7 @@ from dataclasses import dataclass, field
 from .formats import AUDIO_EXT, PATCH_EXT, SYNTH_LABEL
 
 APP_FOLDER = "_Patch Manager"
-SOURCES, PATCHES, SAMPLES = "Sources", "Patches", "Samples"
+SOURCES, PATCHES, BACKUPS, SAMPLES = "Sources", "Patches", "Backups", "Samples"
 SOURCE_TYPES = ["Factory", "Paid", "Free", "User"]           # folder names, in name-priority order (spec 4.5)
 LIB_TYPES = tuple(t.lower() for t in SOURCE_TYPES)            # source types that feed Patches
 LOCKED_TYPES = LIB_TYPES                                      # fingerprinted; the app never writes them
@@ -37,6 +38,11 @@ def sources_dir(root, synth, stype=None):
 
 def patches_dir(root, synth):
     return os.path.join(synth_dir(root, synth), PATCHES)
+
+
+def backups_dir(root, synth):
+    """<Synth>\\Backups: dated dumps of the synth, kept to put it back as it was. Not a source (Nigel, 26 Nov 2026)."""
+    return find_child(synth_dir(root, synth), BACKUPS) or os.path.join(synth_dir(root, synth), BACKUPS)
 
 
 def app_dir(root, *more):
@@ -120,6 +126,8 @@ def reorganize_plan(root: str) -> Plan:
                 plan.make.append(os.path.join(src_root, t))
         if find_child(sdir, PATCHES) is None:
             plan.make.append(os.path.join(sdir, PATCHES))
+        if find_child(sdir, BACKUPS) is None:
+            plan.make.append(os.path.join(sdir, BACKUPS))
         # Free / Factory / Paid / User straight under the synth folder
         for t in SOURCE_TYPES:
             old = find_child(sdir, t)
@@ -144,18 +152,28 @@ def reorganize_plan(root: str) -> Plan:
                     continue
                 plan.moves.append(Move(src, dst, why))
             plan.old_folders.append(old)
-        # factory reads kept as backups by 0.4–0.5. A read holds every slot — your own sounds too — so it is split:
-        # factory sounds into Sources\Factory, yours into Sources\User. The read itself stays in Backups.
-        bdir = os.path.join(root, APP_FOLDER, "Backups", SYNTH_LABEL[synth])
+        # backups kept by 0.4–0.7 under _Patch Manager\Backups\<Synth> move to <Synth>\Backups. A factory read
+        # holds every slot — your own sounds too — so before it moves it is split: factory sounds into
+        # Sources\Factory, yours into Sources\User.
+        bdir = os.path.join(root, APP_FOLDER, BACKUPS, SYNTH_LABEL[synth])
         if os.path.isdir(bdir):
+            new_b = find_child(sdir, BACKUPS) or os.path.join(sdir, BACKUPS)
             for name in sorted(os.listdir(bdir)):
                 src = os.path.join(bdir, name)
-                if os.path.isdir(src) and "factory read" in name.lower():
-                    done = os.path.join(src_root, "Factory", name)
-                    if os.path.exists(done):
-                        plan.skipped.append((src, "already split into Sources"))
-                    else:
-                        plan.splits.append((synth, src))
+                if name.lower() in IGNORED_FILES:
+                    continue
+                if os.path.isdir(src) and "factory read" in name.lower() \
+                        and not os.path.exists(os.path.join(src_root, "Factory", name)):
+                    plan.splits.append((synth, src))
+                dst = os.path.join(new_b, name)
+                if os.path.exists(dst):
+                    plan.skipped.append((src, f"{os.path.relpath(dst, root)} is already there"))
+                else:
+                    plan.moves.append(Move(src, dst, "backup — a dump of the synth, not a source"))
+            plan.old_folders.append(bdir)
+    old_b = os.path.join(root, APP_FOLDER, BACKUPS)
+    if os.path.isdir(old_b):
+        plan.old_folders.append(old_b)
     return plan
 
 
@@ -165,17 +183,11 @@ def reorganize_apply(root: str, plan: Plan, log=lambda s: None, db=None) -> tupl
     moved, errors = 0, []
     for d in plan.make:
         os.makedirs(d, exist_ok=True)
-    for m in plan.moves:
-        try:
-            os.makedirs(os.path.dirname(m.dst), exist_ok=True)
-            os.rename(m.src, m.dst)
-            moved += 1
-            log(f"moved {os.path.relpath(m.src, root)} → {os.path.relpath(m.dst, root)}")
-        except OSError as e:
-            errors.append(f"{os.path.relpath(m.src, root)}: {e.strerror or e}")
+    unsplit = set()
     for synth, folder in plan.splits:
         if db is None:
             errors.append(f"{os.path.relpath(folder, root)}: not split — no library database")
+            unsplit.add(folder)
             continue
         try:
             res = split_factory_read(db, root, synth, folder)
@@ -183,10 +195,22 @@ def reorganize_apply(root: str, plan: Plan, log=lambda s: None, db=None) -> tupl
             log(f"split {os.path.relpath(folder, root)}: {res['n_factory']} factory, {res['n_user']} yours")
         except OSError as e:
             errors.append(f"{os.path.relpath(folder, root)}: {e.strerror or e}")
+            unsplit.add(folder)
+    for m in plan.moves:
+        if m.src in unsplit:
+            continue                                # moved once it has been split
+        try:
+            os.makedirs(os.path.dirname(m.dst), exist_ok=True)
+            os.rename(m.src, m.dst)
+            moved += 1
+            log(f"moved {os.path.relpath(m.src, root)} → {os.path.relpath(m.dst, root)}")
+        except OSError as e:
+            errors.append(f"{os.path.relpath(m.src, root)}: {e.strerror or e}")
     listed = []
     for old in plan.old_folders:
         if os.path.isdir(old) and _empty(old):
             listed.append(old)
+    listed = [x for x in listed if not any(x != y and x.startswith(y + os.sep) for y in listed)]
     if listed:
         add_to_cleanup(root, listed)
     return moved, errors, listed
@@ -197,17 +221,24 @@ def split_factory_read(db, root, synth, folder) -> dict:
     source in Sources\\User. Factory = what Initialize marked (or a maker's file); blanks are left out."""
     from .db import FACTORY_SQL
     from .factory import keep_in_sources
-    from .formats import place
-    pre = folder.rstrip("\\/") + os.sep
-    rows = db.q("SELECT p.hash, p.name, p.data, p.blank, po.bank, po.slot, sf.rel, " + FACTORY_SQL + " AS fac "
-                "FROM patch p JOIN patch_origin po ON po.patch_id=p.id JOIN source_file sf ON sf.id=po.file_id "
-                "WHERE substr(sf.path, 1, ?)=? AND p.kind='sound' ORDER BY sf.rel, po.idx", (len(pre), pre))
+    from .formats import FormatError, place, read_file
+    fac_hashes = {r["hash"] for r in db.q("SELECT p.hash FROM patch p WHERE p.synth=? AND " + FACTORY_SQL, (synth,))}
     items, fac = [], set()
-    for r in rows:
-        pl = place(synth, r["bank"], r["slot"]) if r["bank"] else r["rel"].split("/")[-1]
-        items.append((r["hash"], pl, r["name"], bytes(r["data"]), bool(r["blank"])))
-        if r["fac"]:
-            fac.add(r["hash"])
+    for d, dirs, files in os.walk(folder):
+        dirs.sort()
+        for f in sorted(files):
+            try:
+                with open(os.path.join(d, f), "rb") as fh:
+                    patches = read_file(fh.read(), f, synth)
+            except (FormatError, OSError):
+                continue
+            for p in patches:
+                if p.kind != "sound":
+                    continue
+                pl = place(synth, p.bank, p.slot) if p.bank else f
+                items.append((p.sound_hash, pl, p.name, p.data, p.blank))
+                if p.sound_hash in fac_hashes:
+                    fac.add(p.sound_hash)
     name = os.path.basename(folder.rstrip("\\/"))
     label = name[:-len(" Factory read")] if name.lower().endswith(" factory read") else name
     res = keep_in_sources(db, root, synth, items, fac, label=label)

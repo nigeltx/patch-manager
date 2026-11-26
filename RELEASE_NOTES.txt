@@ -1,3 +1,17 @@
+Backups beside Sources and Patches. Version 0.7.2.
+
+Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.
+
+- Each synth folder now has three folders: Sources, Patches and Backups.
+- Backups are point-in-time dumps of the synth, kept to put it back as it was. They are not sources: the
+  app no longer reads them into the library, so nothing in a backup shows in the patch list or reaches
+  Patches. Sounds you want to keep come from Sources only.
+- Library > Reorganize library… moves the backups from _Patch Manager > Backups into each synth's own
+  Backups folder (Take 5 > Backups, …) and puts the empty old folder on the Studio Cleanup list.
+- Initialize, Back up, Clear user slots and the Syntakt audition slot all save their dumps there.
+- Initialize now saves the sounds into Sources before marking them, and never counts a sound from a
+  factory bank as yours.
+
 Factory duplicates. Version 0.7.1.
 
 Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.

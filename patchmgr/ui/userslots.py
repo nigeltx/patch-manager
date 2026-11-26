@@ -165,7 +165,7 @@ class SlotsDialog(QDialog):
             lines.append("Stopped when you asked; the slots not reached are as they were.")
         if res.failed:
             lines.append("<span style='color:#b91c1c'>" + res.failed + "</span>")
-        lines.append(f"The old programs are in <i>_Patch Manager › Backups › Take 5</i>. Undo is on the Take 5 menu.")
+        lines.append(f"The old programs are in <i>Take 5 › Backups</i>. Undo is on the Take 5 menu.")
         self.status.setText("<br>".join(lines))
         self.go.hide(); self.close_btn.setText("Close"); self.close_btn.setDefault(True)
 

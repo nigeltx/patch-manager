@@ -788,9 +788,9 @@ class MainWindow(QMainWindow):
         if key is None:
             return
         root = self.db.setting("library_root")
-        if mode == "get" and root and not layout.is_new_layout(root, key):
-            if QMessageBox.question(self, APP, "Get from synth keeps new sounds in Sources › User, which comes with the "
-                                               "new library layout. Reorganize the library now?") == QMessageBox.Yes:
+        if mode in ("get", "init") and root and not layout.is_new_layout(root, key):
+            if QMessageBox.question(self, APP, f"{MODES[mode]} keeps sounds in Sources, which comes with the new "
+                                               "library layout. Reorganize the library now?") == QMessageBox.Yes:
                 self.open_reorganize()
             if not layout.is_new_layout(root, key):
                 return

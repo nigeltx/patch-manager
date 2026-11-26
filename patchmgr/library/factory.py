@@ -216,7 +216,7 @@ def library_hashes(db, synth: str) -> set[str]:
     from .layout import LIB_TYPES
     ph = ",".join("?" * len(LIB_TYPES))
     return {r["hash"] for r in db.q(
-        "SELECT DISTINCT p.hash FROM patch p JOIN patch_origin po ON po.patch_id=p.id JOIN source_file sf "
+        "SELECT DISTINCT p.hash FROM patch p JOIN live_origin po ON po.patch_id=p.id JOIN source_file sf "
         f"ON sf.id=po.file_id JOIN source s ON s.id=sf.source_id WHERE p.synth=? AND s.type IN ({ph})",
         (synth, *LIB_TYPES))}
 

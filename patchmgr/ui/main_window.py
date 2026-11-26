@@ -24,12 +24,12 @@ from .details import Details
 from .session import Session
 from .synths import MODES, READ_SYNTHS, ReadDialog, ReadWorker
 from .type_dialog import TypeDialog
-from .library_dialogs import AlertsDialog, RebuildDialog, ReorganizeDialog
+from .library_dialogs import AlertsDialog, DuplicatesDialog, RebuildDialog, ReorganizeDialog
 from .models import TYPE_LABEL, PatchModel, SortProxy
 
 APP = "Patch Manager"
 from patchmgr import __version__
-VERSION = f"{__version__} (M3b Sources and Patches · M4 Take 5 user slots)"
+VERSION = f"{__version__} (Sources, Patches, Backups · duplicates · Take 5 user slots)"
 SYNTH_ORDER = ["take5", "sub37", "deluge", "syntakt"]
 HELP = """<b>Search</b> — type words to match names, packs and notes, and add filters:<br>
 <code>synth:take5</code> &nbsp; <code>synth:sub37</code> &nbsp; <code>synth:deluge</code> &nbsp; <code>synth:syntakt</code><br>
@@ -82,6 +82,7 @@ class MainWindow(QMainWindow):
         lm.addAction("Rebuild Patches…", self.open_rebuild)
         lm.addAction("Reorganize library…", self.open_reorganize)
         lm.addAction("Sources changed or missing…", self.open_alerts)
+        lm.addAction("Find duplicates in Sources…", self.open_duplicates)
         lm.addSeparator()
         lm.addAction("Add a folder…", self.add_folder)
         lm.addAction("Library folder…", self.choose_root)
@@ -226,6 +227,8 @@ class MainWindow(QMainWindow):
         root = self.db.setting("library_root")
         if root and os.path.isdir(root):
             layout.load_types(self.db, root)
+            from ..library import duplicates
+            duplicates.load(self.db, root)
             if not self.db.setting("reorganize_offered") and not layout.reorganize_plan(root).empty:
                 self.db.set_setting("reorganize_offered", "1")
                 if QMessageBox.question(
@@ -343,6 +346,16 @@ class MainWindow(QMainWindow):
                                         "run Clean up Studio.cmd when convenient.")
             self.scan()
 
+    def open_duplicates(self):
+        root = self._root_or_warn()
+        if not root or self.thread is not None:
+            return
+        dlg = DuplicatesDialog(self, self.db, root)
+        dlg.exec()
+        if dlg.changed_anything:
+            self.open_rebuild(quiet=True)
+        self.fill_tree(); self.refresh()
+
     def open_alerts(self):
         dlg = AlertsDialog(self, self.db)
         dlg.exec()
@@ -361,7 +374,7 @@ class MainWindow(QMainWindow):
         counts = {r["synth"]: r["n"] for r in self.db.q("SELECT synth, COUNT(*) n FROM patch GROUP BY synth")}
         packs = self.db.q(
             "SELECT s.synth, s.type, s.pack, COUNT(DISTINCT po.patch_id) n FROM source s JOIN source_file sf "
-            "ON sf.source_id=s.id JOIN patch_origin po ON po.file_id=sf.id GROUP BY s.synth, s.type, s.pack")
+            "ON sf.source_id=s.id JOIN live_origin po ON po.file_id=sf.id GROUP BY s.synth, s.type, s.pack")
         for syn in SYNTH_ORDER:
             it = QTreeWidgetItem([f"{SYNTH_LABEL[syn]}  ({counts.get(syn, 0):,})"]); it.setData(0, Qt.UserRole, {"synth": syn})
             f = it.font(0); f.setBold(True); it.setFont(0, f)
@@ -381,7 +394,7 @@ class MainWindow(QMainWindow):
                         it.addChild(src)
                     parent = src
                 n = self.db.one("SELECT COUNT(DISTINCT po.patch_id) FROM source s JOIN source_file sf ON sf.source_id=s.id "
-                                "JOIN patch_origin po ON po.file_id=sf.id WHERE s.synth=? AND s.type=?", (syn, t))
+                                "JOIN live_origin po ON po.file_id=sf.id WHERE s.synth=? AND s.type=?", (syn, t))
                 ti = QTreeWidgetItem([f"{TYPE_LABEL[t]}  ({n:,})"]); ti.setData(0, Qt.UserRole, {"synth": syn, "type": t})
                 parent.addChild(ti)
                 for r in sorted(rows, key=lambda r: (r["pack"] or "").lower()):

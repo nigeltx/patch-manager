@@ -91,7 +91,7 @@ def _factory_hashes(db):
 
 
 def _source_types(db, h):
-    return {r["type"] for r in db.q("SELECT DISTINCT s.type FROM patch p JOIN patch_origin po ON po.patch_id=p.id "
+    return {r["type"] for r in db.q("SELECT DISTINCT s.type FROM patch p JOIN live_origin po ON po.patch_id=p.id "
                                     "JOIN source_file sf ON sf.id=po.file_id JOIN source s ON s.id=sf.source_id "
                                     "WHERE p.hash=?", (h,))}
 
@@ -125,9 +125,9 @@ def your_patches(db) -> list:
         "(SELECT folder FROM patch_file pf WHERE pf.hash=p.hash LIMIT 1) folder FROM patch p "
         "LEFT JOIN type_guess tg ON tg.hash=p.hash LEFT JOIN type_user tu ON tu.hash=p.hash "
         "WHERE p.synth=? AND p.kind='sound' AND p.blank=0 "
-        "AND EXISTS(SELECT 1 FROM patch_origin po JOIN source_file sf ON sf.id=po.file_id JOIN source s "
+        "AND EXISTS(SELECT 1 FROM live_origin po JOIN source_file sf ON sf.id=po.file_id JOIN source s "
         "  ON s.id=sf.source_id WHERE po.patch_id=p.id AND s.type='user') "
-        "AND NOT EXISTS(SELECT 1 FROM patch_origin po JOIN source_file sf ON sf.id=po.file_id JOIN source s "
+        "AND NOT EXISTS(SELECT 1 FROM live_origin po JOIN source_file sf ON sf.id=po.file_id JOIN source s "
         "  ON s.id=sf.source_id WHERE po.patch_id=p.id AND s.type IN ('factory','paid','free'))", (SYNTH,))
     order = [folder_name(t) for t in ptypes.ALL_TYPES + [ptypes.UNKNOWN]]
 

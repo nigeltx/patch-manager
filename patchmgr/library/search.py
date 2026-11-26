@@ -13,12 +13,12 @@ STATES = {"unheard", "heard", "onsynth", "preview", "dupe", "unrated", "problem"
 
 BASE = """
 SELECT p.id, p.hash, p.synth, p.name, p.fmt, p.kind,
-       (SELECT s.pack FROM patch_origin po JOIN source_file sf ON sf.id=po.file_id JOIN source s ON s.id=sf.source_id
+       (SELECT s.pack FROM live_origin po JOIN source_file sf ON sf.id=po.file_id JOIN source s ON s.id=sf.source_id
          WHERE po.patch_id=p.id ORDER BY CASE s.type WHEN 'paid' THEN 0 WHEN 'free' THEN 1 WHEN 'factory' THEN 2 WHEN 'user' THEN 3 ELSE 4 END,
          sf.rel LIMIT 1) AS pack,
-       (SELECT GROUP_CONCAT(DISTINCT s.type) FROM patch_origin po JOIN source_file sf ON sf.id=po.file_id
+       (SELECT GROUP_CONCAT(DISTINCT s.type) FROM live_origin po JOIN source_file sf ON sf.id=po.file_id
          JOIN source s ON s.id=sf.source_id WHERE po.patch_id=p.id) AS types,
-       (SELECT COUNT(*) FROM patch_origin po WHERE po.patch_id=p.id) AS n_origins,
+       (SELECT COUNT(*) FROM live_origin po WHERE po.patch_id=p.id) AS n_origins,
        (SELECT GROUP_CONCAT(t.name || CASE WHEN pt.confirmed THEN '' ELSE '?' END, ' ') FROM patch_tag pt
          JOIN tag t ON t.id=pt.tag_id WHERE pt.hash=p.hash) AS tags,
        m.rating, m.notes, m.last_heard,
@@ -63,7 +63,7 @@ def build(text: str, scope: dict | None = None) -> tuple[str, list]:
         cond, a = ["s.type=?"] if scope.get("type") else [], [scope["type"]] if scope.get("type") else []
         if scope.get("pack"):
             cond.append("s.pack=?"); a.append(scope["pack"])
-        where.append("EXISTS(SELECT 1 FROM patch_origin po JOIN source_file sf ON sf.id=po.file_id JOIN source s "
+        where.append("EXISTS(SELECT 1 FROM live_origin po JOIN source_file sf ON sf.id=po.file_id JOIN source s "
                      "ON s.id=sf.source_id WHERE po.patch_id=p.id AND " + " AND ".join(cond) + ")")
         args += a
     if scope.get("pfolder"):
@@ -102,11 +102,11 @@ def build(text: str, scope: dict | None = None) -> tuple[str, list]:
             v = val.lower()
             if v not in ("free", "factory", "paid", "user", "unsorted", "backup", "card"):
                 raise QueryError("source is factory, paid, free, user, unsorted, backup or card")
-            cond = ("EXISTS(SELECT 1 FROM patch_origin po JOIN source_file sf ON sf.id=po.file_id JOIN source s "
+            cond = ("EXISTS(SELECT 1 FROM live_origin po JOIN source_file sf ON sf.id=po.file_id JOIN source s "
                     "ON s.id=sf.source_id WHERE po.patch_id=p.id AND s.type=?)")
             a = [v]
         elif val and key == "pack":
-            cond = ("EXISTS(SELECT 1 FROM patch_origin po JOIN source_file sf ON sf.id=po.file_id JOIN source s "
+            cond = ("EXISTS(SELECT 1 FROM live_origin po JOIN source_file sf ON sf.id=po.file_id JOIN source s "
                     "ON s.id=sf.source_id WHERE po.patch_id=p.id AND s.pack LIKE ?)")
             a = [f"%{val}%"]
         elif val and key == "type":
@@ -123,14 +123,14 @@ def build(text: str, scope: dict | None = None) -> tuple[str, list]:
                 "heard": "m.last_heard IS NOT NULL",
                 "onsynth": "EXISTS(SELECT 1 FROM slot_state ss WHERE ss.hash=p.hash)",
                 "preview": "EXISTS(SELECT 1 FROM preview pv WHERE pv.hash=p.hash)",
-                "dupe": "(SELECT COUNT(*) FROM patch_origin po WHERE po.patch_id=p.id) > 1",
+                "dupe": "(SELECT COUNT(*) FROM live_origin po WHERE po.patch_id=p.id) > 1",
                 "unrated": "m.rating IS NULL",
                 "problem": "0",
                 "factory": FACTORY_SQL,
                 "blank": "p.blank = 1",
             }[key]
         else:
-            cond = ("(p.name LIKE ? OR COALESCE(m.notes,'') LIKE ? OR EXISTS(SELECT 1 FROM patch_origin po JOIN "
+            cond = ("(p.name LIKE ? OR COALESCE(m.notes,'') LIKE ? OR EXISTS(SELECT 1 FROM live_origin po JOIN "
                     "source_file sf ON sf.id=po.file_id JOIN source s ON s.id=sf.source_id WHERE po.patch_id=p.id AND "
                     "(s.pack LIKE ? OR po.name LIKE ?)))")
             a = [f"%{t}%"] * 4

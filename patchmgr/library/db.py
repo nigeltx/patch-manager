@@ -45,6 +45,15 @@ CREATE TABLE IF NOT EXISTS type_guess (hash TEXT PRIMARY KEY, types TEXT, why TE
 CREATE TABLE IF NOT EXISTS type_user (hash TEXT PRIMARY KEY, types TEXT);
 CREATE TABLE IF NOT EXISTS patch_file (path TEXT PRIMARY KEY, synth TEXT NOT NULL, hash TEXT NOT NULL,
     folder TEXT, size INTEGER, mtime REAL, written_at REAL);
+CREATE TABLE IF NOT EXISTS dup_aside (hash TEXT NOT NULL, rel TEXT NOT NULL, idx INTEGER NOT NULL,
+    PRIMARY KEY(hash, rel, idx));
+DROP VIEW IF EXISTS live_origin;
+CREATE VIEW live_origin AS
+    SELECT po.* FROM patch_origin po JOIN patch p ON p.id=po.patch_id JOIN source_file sf ON sf.id=po.file_id
+    WHERE NOT EXISTS(SELECT 1 FROM dup_aside da WHERE da.hash=p.hash AND da.rel=sf.rel AND da.idx=po.idx)
+       OR NOT EXISTS(SELECT 1 FROM patch_origin k JOIN source_file ksf ON ksf.id=k.file_id
+                     WHERE k.patch_id=po.patch_id AND NOT EXISTS(SELECT 1 FROM dup_aside d2
+                         WHERE d2.hash=p.hash AND d2.rel=ksf.rel AND d2.idx=k.idx));
 CREATE TABLE IF NOT EXISTS synth_init (id INTEGER PRIMARY KEY, synth TEXT NOT NULL, model TEXT, firmware TEXT,
     run_at REAL, slots_read INTEGER, marked_factory INTEGER, backup TEXT);
 """
@@ -61,7 +70,7 @@ FACTORY_BANKS_DEFAULT = {"take5": "F1-F16", "sub37": "1-9", "syntakt": "A-G", "d
 
 # A patch is factory when Initialize marked it, or when it is in a maker's Factory folder — never if it is blank.
 FACTORY_SQL = ("(p.blank = 0 AND COALESCE(p.factory, '') != 'no' AND (p.factory = 'read' OR EXISTS("
-               "SELECT 1 FROM patch_origin po JOIN source_file sf ON sf.id=po.file_id JOIN source s ON s.id=sf.source_id "
+               "SELECT 1 FROM live_origin po JOIN source_file sf ON sf.id=po.file_id JOIN source s ON s.id=sf.source_id "
                "WHERE po.patch_id=p.id AND s.type='factory')))")
 
 STARTER_TAGS = {
@@ -283,11 +292,11 @@ class DB:
 
     def maker_hashes(self, synth):
         return {r[0] for r in self.q(
-            "SELECT DISTINCT p.hash FROM patch p JOIN patch_origin po ON po.patch_id=p.id JOIN source_file sf "
+            "SELECT DISTINCT p.hash FROM patch p JOIN live_origin po ON po.patch_id=p.id JOIN source_file sf "
             "ON sf.id=po.file_id JOIN source s ON s.id=sf.source_id WHERE p.synth=? AND s.type='factory'", (synth,))}
 
     def maker_pack(self, h):
-        return self.one("SELECT COALESCE(NULLIF(s.pack, ''), 'Factory') FROM patch p JOIN patch_origin po ON po.patch_id=p.id "
+        return self.one("SELECT COALESCE(NULLIF(s.pack, ''), 'Factory') FROM patch p JOIN live_origin po ON po.patch_id=p.id "
                         "JOIN source_file sf ON sf.id=po.file_id JOIN source s ON s.id=sf.source_id "
                         "WHERE p.hash=? AND s.type='factory' LIMIT 1", (h,))
 

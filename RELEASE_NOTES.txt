@@ -1,3 +1,23 @@
+Duplicates in Sources. Version 0.8.0.
+
+Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.
+
+New — design spec v1.12, section 4.12. Sources is the single source of truth, and duplicates in it are allowed;
+the app never removes a copy on its own.
+- Library > Find duplicates in Sources… lists every sound found in more than one place in Sources, for one
+  synth or all of them.
+- By sound: each sound with all its copies (source type, pack, file, place in the file). Keep the selected
+  copy — it becomes the source of truth and the other copies are set aside — or Keep all copies.
+- By pair of files: files that share sounds, e.g. Mountains all banks <-> Bank 1, with the number shared.
+  Keep A's copies, Keep B's copies or Keep both, for every sound the two share. Only those two files'
+  copies change.
+- Set-aside copies stay in their files, untouched, but no longer count anywhere: not as a source, not as a
+  copy, not for the factory mark, not for the name in Patches. A sound never loses its last source.
+- Files with nothing left: a file whose every sound is set aside can be put on the Studio Cleanup list, so
+  Clean up Studio.cmd moves it to Archive. Partly set-aside files stay; pack files are never edited.
+- Your choices are kept in _Patch Manager > duplicates.json, so another PC makes the same ones. A Rebuild is
+  offered when you close the dialog.
+
 Backups beside Sources and Patches. Version 0.7.2.
 
 Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.

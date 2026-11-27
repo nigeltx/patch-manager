@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QHBoxLayout, QHeade
                                QTableWidgetItem, QVBoxLayout, QWidget)
 
 from ..library import factory
+from .theme import is_dark, paint
 from ..library.formats import SYNTAKT_BANKS, place
 
 GREEN, AMBER, FACTORY_BG = "#d8f0e4", "#fde8c8", "#eef1f5"
@@ -75,9 +76,9 @@ class BankView(QWidget):
         self.grid.cellClicked.connect(self._clicked)
         v.addWidget(self.grid, 1)
         self.legend = QLabel(
-            f"<span style='background:{GREEN}'>&nbsp;in your library&nbsp;</span> &nbsp; "
-            f"<span style='background:{AMBER}'>&nbsp;in no source yet — Get from synth keeps it&nbsp;</span> &nbsp; "
-            f"<span style='background:{FACTORY_BG}; color:#6b7280'>&nbsp;factory bank&nbsp;</span> &nbsp; blank: empty or not read")
+            f"<span style='background:{GREEN}; color:#111827'>&nbsp;in your library&nbsp;</span> &nbsp; "
+            f"<span style='background:{AMBER}; color:#111827'>&nbsp;in no source yet — Get from synth keeps it&nbsp;</span> &nbsp; "
+            f"<span style='background:{FACTORY_BG}; color:#8b919a'>&nbsp;factory bank&nbsp;</span> &nbsp; blank: empty or not read")
         self.legend.setTextFormat(Qt.RichText)
         v.addWidget(self.legend)
         self.cells = {}
@@ -114,17 +115,17 @@ class BankView(QWidget):
             where = place(synth, b, s)
             if st:
                 n_on += 1
-                if st["hash"] in self.library:
-                    it.setBackground(QColor(GREEN)); tip = "in your library — click to select it"
-                else:
-                    it.setBackground(QColor(AMBER)); tip = "in no source yet — Get from synth keeps it"
+                bg = GREEN if st["hash"] in self.library else AMBER
+                tip = ("in your library — click to select it" if bg == GREEN
+                       else "in no source yet — Get from synth keeps it")
+                paint(it, bg, "#4b5563" if b in fac else None)
                 if b in fac:
-                    it.setForeground(QColor("#6b7280")); tip += " · factory bank"
+                    tip += " · factory bank"
                 it.setToolTip(f"{where}  {st['name']}\n{tip}")
             else:
                 it.setToolTip(f"{where}  empty or not read yet")
                 if b in fac:
-                    it.setBackground(QColor(FACTORY_BG))
+                    paint(it, "#2a2f38" if is_dark() else FACTORY_BG)
             self.grid.setItem(r, c, it)
             self.cells[(r, c)] = st
             self.where[(r, c)] = (b, s)
@@ -133,7 +134,7 @@ class BankView(QWidget):
         stamp = time.strftime("%d %b %Y %H:%M", time.localtime(when)) if when else "never"
         bank_note = f" · bank {SYNTAKT_BANKS[self.bank.currentIndex()]}" if synth == "syntakt" else ""
         self.title.setText(f"<b>{self.label} › Targets › Presets</b>{bank_note} — {n_on} slots hold a sound "
-                           f"<span style='color:#6b7280'>(last read {stamp})</span>")
+                           f"<span style='color:#8b919a'>(last read {stamp})</span>")
 
     def _clicked(self, r, c):
         st = self.cells.get((r, c))

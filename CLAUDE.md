@@ -19,7 +19,8 @@ plain modules, tests for every core behaviour, no clever metaprogramming.
   undo (spec 7.4, 7.8); H001–H127 only (A–G factory, H128 audition); the dialogs reuse ui/userslots.SlotsDialog
   (class attrs SYNTH / LABEL / OPS pick the synth and the module that plans and runs the writes)
 - `patchmgr/updater.py` — self-update from GitHub releases (same file in each of Nigel's apps; repo must be public)
-- `patchmgr/ui` — windows; `tests` — `python -m pytest -q` must pass (QT_QPA_PLATFORM=offscreen)
+- `patchmgr/ui` — windows; colours follow the Windows light/dark theme — `ui/theme.py` paint() puts dark text on the
+  app's light highlight colours (use it, not setBackground); never force a palette; `tests` — `python -m pytest -q` must pass (QT_QPA_PLATFORM=offscreen)
 - `packaging` + `.github/workflows/build.yml` — PyInstaller + Inno Setup; every push to main builds an
   installer and publishes a GitHub release
 - User data: %LOCALAPPDATA%\PatchManager\library.db (never in the install folder)

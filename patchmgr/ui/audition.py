@@ -20,7 +20,7 @@ class AuditionPanel(QFrame):
         self.session, self.db = session, db
         self.row = None
         self.own = None
-        self.setStyleSheet("QFrame#aud{background:#f3f4f6;border-radius:6px;}")
+        self.setStyleSheet("QFrame#aud{background:palette(alternate-base);border-radius:6px;}")
         self.setObjectName("aud")
         v = QVBoxLayout(self)
         self.load_btn = QPushButton("Load to edit buffer only")
@@ -104,13 +104,13 @@ class AuditionPanel(QFrame):
             why = {"deluge": "Deluge audition over USB arrives with milestone M4.",
                    "syntakt": "Syntakt projects go to the Syntakt with Elektron Transfer; only single sounds are auditioned."}
             self.safe.setText(why.get(syn, "This item is not a single sound, so it cannot be auditioned."))
-            self.safe.setStyleSheet("color:#6b7280;")
+            self.safe.setStyleSheet("color:#8b919a;")
         elif not ready:
             st = self.session.state.get(syn, "absent")
             self.safe.setText(f"The {SYNTH_LABEL[syn]} is not connected to the PC." if st == "absent" else
                               f"The {SYNTH_LABEL[syn]} is being checked…" if st == "checking" else
                               f"The {SYNTH_LABEL[syn]} failed its check — see the session details (click its pill in the toolbar).")
-            self.safe.setStyleSheet("color:#9a3412;")
+            self.safe.setStyleSheet("color:#c2410c;")
         else:
             if syn == "syntakt":
                 drv = self.session.drivers.get("syntakt")
@@ -119,7 +119,7 @@ class AuditionPanel(QFrame):
                                   "and press FUNC + YES there to hear it (Play here sends nothing to the Syntakt).")
             else:
                 self.safe.setText("Saved programs on the synth are untouched: audition only fills the edit buffer.")
-            self.safe.setStyleSheet("color:#047857;")
+            self.safe.setStyleSheet("color:#16a34a;")
             tags = [t["name"] for t in self.db.tags_for(row["hash"])]
             key = default_for(tags)
             if self.phrase.currentData() != "file" or self.own is None:
@@ -165,7 +165,7 @@ class AuditionPanel(QFrame):
         self.transport_btn.blockSignals(True)
         self.transport_btn.setChecked(running)
         self.transport_btn.setText("■ Stop transport" if running else "▶ Start transport")
-        self.transport_btn.setStyleSheet("background:#d1fae5; font-weight:600;" if running else "")
+        self.transport_btn.setStyleSheet("background:#d1fae5; color:#065f46; font-weight:600;" if running else "")
         self.transport_btn.blockSignals(False)
 
     def _bpm(self, x):

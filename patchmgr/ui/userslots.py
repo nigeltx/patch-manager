@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QDialog, QHBoxLayout, QHeaderV
 from ..library import factory, userslots
 from ..library.scanner import Scanner
 from .models import AMBER, GREEN
+from .theme import paint
 
 TITLE = "Take 5 user slots"
 
@@ -90,9 +91,8 @@ class SlotsDialog(QDialog):
         self._label()
 
     def _paint(self, i):
-        col = QColor(GREEN if self.steps[i].tick else "#ffffff")
         for c in range(4):
-            self.table.item(i, c).setBackground(col)
+            paint(self.table.item(i, c), GREEN if self.steps[i].tick else None)
 
     def _ticked(self, item):
         if item.column() != 0:
@@ -171,7 +171,7 @@ class SlotsDialog(QDialog):
         if res.stopped:
             lines.append("Stopped when you asked; the slots not reached are as they were.")
         if res.failed:
-            lines.append("<span style='color:#b91c1c'>" + res.failed + "</span>")
+            lines.append("<span style='color:#dc2626'>" + res.failed + "</span>")
         lines.append(f"What was there before is in <i>{self.LABEL} › Backups</i>. Undo is on the {self.LABEL} menu.")
         self.status.setText("<br>".join(lines))
         self.go.hide(); self.close_btn.setText("Close"); self.close_btn.setDefault(True)
@@ -517,7 +517,7 @@ def fill_grid(grid, db, mark=None):
             v = sm.get((b, p))
             it = QTableWidgetItem(v["name"] if v else "")
             it.setToolTip(f"U{b}-{p:02d}: " + (f"{v['name']} — {v['state']}" if v else "not read yet"))
-            it.setBackground(QColor(STATE_COLOUR.get(v["state"], "#ffffff") if v else "#ffffff"))
+            paint(it, STATE_COLOUR.get(v["state"]) if v else None)
             grid.setItem(b - 1, p - 1, it)
 
 

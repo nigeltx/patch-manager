@@ -14,6 +14,7 @@ from ..library import factory, layout
 from ..library.db import DB
 from ..library.formats import SYNTAKT_BANKS, SYNTH_LABEL
 from ..library.scanner import Scanner
+from .theme import paint
 from .models import AMBER, GREEN
 
 READ_SYNTHS = ("take5", "sub37", "syntakt", "deluge")
@@ -137,7 +138,7 @@ class ReadDialog(QDialog):
                       "replaces those marks for the sounds it reads.")
         t = QLabel(intro); t.setWordWrap(True); t.setTextFormat(Qt.RichText); v.addWidget(t)
         how = QLabel(HOW[synth]); how.setWordWrap(True); how.setTextFormat(Qt.RichText)
-        how.setStyleSheet("background:#f1f4fb; padding:8px; border-radius:4px;"); v.addWidget(how)
+        how.setStyleSheet("background:#f1f4fb; color:#111827; padding:8px; border-radius:4px;"); v.addWidget(how)
         self.banks = None
         if mode == "init" and synth != "deluge":
             h = QHBoxLayout()
@@ -146,11 +147,11 @@ class ReadDialog(QDialog):
             hint = {"take5": "U1–U16 are user banks, F1–F16 factory banks — e.g. F1-F16, or U1-U8, F1-F16",
                     "sub37": "e.g. 1-9 — banks after these are yours",
                     "syntakt": "sound banks A-H, e.g. A-G — the factory sounds fill A to G"}[synth]
-            hl = QLabel(hint); hl.setStyleSheet("color:#6b7280;"); h.addWidget(hl); h.addStretch(1)
+            hl = QLabel(hint); hl.setStyleSheet("color:#8b919a;"); h.addWidget(hl); h.addStretch(1)
             v.addLayout(h)
             sub = QLabel("Presets in these banks are ticked as factory. So is any sound that matches a maker's file in "
                          "your Factory folder, wherever it sits. Everything else starts unticked, as yours.")
-            sub.setWordWrap(True); sub.setStyleSheet("color:#6b7280;"); v.addWidget(sub)
+            sub.setWordWrap(True); sub.setStyleSheet("color:#8b919a;"); v.addWidget(sub)
         self.bar = QProgressBar(); self.bar.setRange(0, 1); self.bar.setValue(0); v.addWidget(self.bar)
         self.status = QLabel("Press Start when the synth is ready."); self.status.setWordWrap(True); v.addWidget(self.status)
 
@@ -221,7 +222,7 @@ class ReadDialog(QDialog):
     def _failed(self, msg):
         self._end()
         self.bar.setRange(0, 1); self.bar.setValue(0)
-        self.status.setText(f"<b style='color:#b91c1c'>Stopped:</b> {msg}")
+        self.status.setText(f"<b style='color:#dc2626'>Stopped:</b> {msg}")
         self.start_btn.setEnabled(True); self.start_btn.setText("Try again")
         if self.banks is not None:
             self.banks.setEnabled(True)
@@ -285,7 +286,7 @@ class ReadDialog(QDialog):
     def _paint(self, i):
         r = self.rows[self.table.item(i, 0).data(Qt.UserRole)]
         for c in range(4):
-            self.table.item(i, c).setBackground(QColor((GREEN if self.mode == "get" else AMBER) if r.tick else "#ffffff"))
+            paint(self.table.item(i, c), (GREEN if self.mode == "get" else AMBER) if r.tick else None)
 
     def _count(self, blanks=None):
         blanks = sum(1 for r in self.rows if r.status == "blank") if blanks is None else blanks

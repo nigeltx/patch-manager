@@ -21,24 +21,8 @@ def main():
             return 0
     app.setApplicationName(APP)
     app.setStyle("Fusion")
-    # The app is drawn in light colours. Windows dark mode would otherwise give white text on light panels,
-    # so every colour role is set explicitly rather than taken from the system.
-    try:
-        from PySide6.QtCore import Qt
-        app.styleHints().setColorScheme(Qt.ColorScheme.Light)
-    except Exception:                              # noqa: BLE001 — Qt older than 6.8
-        pass
-    from PySide6.QtGui import QColor, QPalette
-    pal = QPalette()
-    for role, colour in ((QPalette.Window, "#f5f5f5"), (QPalette.WindowText, "#111827"), (QPalette.Base, "#ffffff"),
-                         (QPalette.AlternateBase, "#f3f4f6"), (QPalette.Text, "#111827"), (QPalette.Button, "#f3f4f6"),
-                         (QPalette.ButtonText, "#111827"), (QPalette.ToolTipBase, "#ffffdc"), (QPalette.ToolTipText, "#111827"),
-                         (QPalette.Highlight, "#2f80c3"), (QPalette.HighlightedText, "#ffffff"),
-                         (QPalette.PlaceholderText, "#9ca3af"), (QPalette.Link, "#2563eb"), (QPalette.BrightText, "#ffffff")):
-        pal.setColor(role, QColor(colour))
-    for role in (QPalette.WindowText, QPalette.Text, QPalette.ButtonText):
-        pal.setColor(QPalette.Disabled, role, QColor("#9ca3af"))
-    app.setPalette(pal)
+    # The colours follow Windows' light or dark mode (Nigel, 27 Nov 2026); ui/theme.py keeps text readable on the
+    # app's own highlight colours.
     log_dir = os.path.dirname(default_path())
 
     def excepthook(t, v, tb):

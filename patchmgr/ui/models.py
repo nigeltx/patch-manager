@@ -9,6 +9,8 @@ from ..library.formats import SYNTH_LABEL
 
 COLUMNS = ["", "F", "Name", "Type", "Synth", "Pack", "Source", "Tags", "Rating", "Copies"]
 C_TYPE, C_TAGS, C_RATING, C_COPIES = 3, 7, 8, 9
+from .theme import INK, tone  # noqa: E402
+
 GREEN, AMBER, AMBER_TEXT = "#d8f0e4", "#fde7c7", "#7c2d12"
 TYPE_LABEL = {"free": "Free", "factory": "Factory", "paid": "Paid", "user": "User", "unsorted": "Unsorted", "backup": "Backup",
               "card": "SD Card"}
@@ -89,16 +91,19 @@ class PatchModel(QAbstractTableModel):
         if role == Qt.TextAlignmentRole and c == 1:
             return int(Qt.AlignCenter)
         if role == Qt.ForegroundRole:
+            lit = (c == 1 and r.get("is_factory")) or r.get("on_synth")      # on a light highlight: dark text
             if c == C_TYPE and r["kind"] == "sound" and not r.get("ptype_user"):
-                return QColor("#4b5563")
+                return QColor("#4b5563") if lit else tone("#4b5563", "#9ca3af")
             if c == C_RATING:
-                return QColor("#b7791f")
+                return QColor("#b7791f") if lit else tone("#b7791f", "#f6c453")
             if c == 0:
-                return QColor("#2563eb")
+                return QColor("#2563eb") if lit else tone("#2563eb", "#7cb4ff")
             if c == 1:
-                return QColor(AMBER_TEXT)
+                return QColor(AMBER_TEXT) if lit else tone(AMBER_TEXT, "#fdba74")
             if r["kind"] != "sound":
-                return QColor("#6b7280")
+                return QColor("#6b7280") if lit else tone("#6b7280", "#9ca3af")
+            if lit:
+                return QColor(INK)
         if role == Qt.FontRole and c == 1:
             f = QFont(); f.setBold(True); return f
         if role == Qt.ToolTipRole:

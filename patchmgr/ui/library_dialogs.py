@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QDialog, QHBoxLayout, QHeaderV
 
 from ..library import layout, rebuild
 from ..library.formats import SYNTH_LABEL
+from .theme import paint
 from .models import AMBER, GREEN
 
 GREY = "#f3f4f6"
@@ -36,7 +37,7 @@ def _fill(t, rows):
         for c, v in enumerate(cells):
             it = QTableWidgetItem(v)
             if colour:
-                it.setBackground(QColor(colour))
+                paint(it, colour)
             t.setItem(i, c, it)
 
 

@@ -1,3 +1,13 @@
+Follows the Windows theme. Version 0.10.4.
+
+Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.
+
+- The app now takes Windows' own colours: light or dark, as set in Settings › Personalization › Colors
+  (Choose your mode). It used to force light colours.
+- The app's highlights keep their meaning in both modes — green for on the synth or in your library, amber for
+  factory or not yet kept — with dark text on them so they stay readable in dark mode. Coloured hints (grey notes,
+  links, warnings) use shades that read on either background.
+
 Initialize from the Presets grid. Version 0.10.3.
 
 Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.

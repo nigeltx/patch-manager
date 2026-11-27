@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QAbstractItemView, QHBoxLayout, QHeaderView, QPush
 
 from ..library import factory, syntaktslots as ss
 from ..library.scanner import Scanner
+from .theme import paint
 from .userslots import STATE_COLOUR, SlotsDialog, UndoDialog
 
 
@@ -35,13 +36,13 @@ def fill_grid(grid, db):
         if s == ss.SCRATCH:
             it = QTableWidgetItem("audition")
             it.setToolTip("H128 is the audition slot — not used for keeping sounds")
-            it.setBackground(QColor("#f3f4f6")); it.setForeground(QColor("#9ca3af"))
+            paint(it, "#f3f4f6", "#9ca3af")
             it.setFlags(Qt.NoItemFlags)
         else:
             v = sm.get(s)
             it = QTableWidgetItem(v["name"] if v else "")
             it.setToolTip(f"H:{s:03d}: " + ((v["name"] or "empty") + f" — {v['state']}" if v else "not read yet"))
-            it.setBackground(QColor(STATE_COLOUR.get(v["state"], "#ffffff") if v else "#ffffff"))
+            paint(it, STATE_COLOUR.get(v["state"]) if v else None)
         grid.setItem(r, c, it)
 
 

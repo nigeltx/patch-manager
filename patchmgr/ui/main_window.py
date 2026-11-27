@@ -167,7 +167,7 @@ class MainWindow(QMainWindow):
         self.banner = QFrame(); self.banner.setStyleSheet("QFrame{background:#fff7ed; border:1px solid #fdba74; "
                                                           "border-radius:4px;}")
         bl = QHBoxLayout(self.banner); bl.setContentsMargins(10, 6, 10, 6)
-        self.banner_lbl = QLabel(""); self.banner_lbl.setWordWrap(True); self.banner_lbl.setStyleSheet("border:none;")
+        self.banner_lbl = QLabel(""); self.banner_lbl.setWordWrap(True); self.banner_lbl.setStyleSheet("border:none; color:#111827;")
         bl.addWidget(self.banner_lbl, 1)
         self.banner_go = QPushButton("Initialize…"); bl.addWidget(self.banner_go)
         later = QPushButton("Later"); later.clicked.connect(self._banner_later); bl.addWidget(later)
@@ -198,7 +198,7 @@ class MainWindow(QMainWindow):
 
         # ---------------- status
         self.status_lbl = QLabel(""); self.statusBar().addWidget(self.status_lbl, 1)
-        self.edit_lbl = QLabel(""); self.edit_lbl.setStyleSheet("color:#9a3412;")
+        self.edit_lbl = QLabel(""); self.edit_lbl.setStyleSheet("color:#c2410c;")
         self.statusBar().addPermanentWidget(self.edit_lbl)
         self.progress = QProgressBar(); self.progress.setMaximumWidth(260); self.progress.hide()
         self.statusBar().addPermanentWidget(self.progress)
@@ -642,7 +642,7 @@ class MainWindow(QMainWindow):
             self.search.setStyleSheet("")
             self.search.setToolTip("")
         except search.QueryError as e:
-            self.search.setStyleSheet("background:#fef2f2;")
+            self.search.setStyleSheet("background:#fef2f2; color:#111827;")
             self.search.setToolTip(str(e)); self.status_lbl.setText("Search: " + str(e))
             return
         sel = {r["hash"] for r in self.selected_rows()}
@@ -764,7 +764,7 @@ class MainWindow(QMainWindow):
         else:
             self.status_lbl.setText(f"⚠ The {SYNTH_LABEL[synth]} did not take the patch — it reports '{got}'. "
                                     "Details are in session log.txt")
-            self.status_lbl.setStyleSheet("color:#b91c1c;")
+            self.status_lbl.setStyleSheet("color:#dc2626;")
             QTimer.singleShot(8000, lambda: self.status_lbl.setStyleSheet(""))
 
     def put_back(self):

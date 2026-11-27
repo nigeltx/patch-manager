@@ -1,2 +1,2 @@
 """Patch Manager — library, audition and copy for the studio synths."""
-__version__ = "0.10.3"
+__version__ = "0.10.4"

@@ -33,7 +33,7 @@ class FlowRow(QWidget):
 
 
 def heading(text):
-    l = QLabel(text); l.setStyleSheet("font-weight:600; color:#374151; margin-top:10px;")
+    l = QLabel(text); l.setStyleSheet("font-weight:600; color:palette(window-text); margin-top:10px;")
     return l
 
 
@@ -54,7 +54,7 @@ class Details(QScrollArea):
 
         self.title = QLabel("Select a patch"); self.title.setWordWrap(True)
         self.title.setStyleSheet("font-size:16px; font-weight:700;")
-        self.sub = QLabel(""); self.sub.setStyleSheet("color:#6b7280;"); self.sub.setWordWrap(True)
+        self.sub = QLabel(""); self.sub.setStyleSheet("color:#8b919a;"); self.sub.setWordWrap(True)
         v.addWidget(self.title); v.addWidget(self.sub)
 
         self.aud_slot = QVBoxLayout(); v.addLayout(self.aud_slot)
@@ -71,7 +71,7 @@ class Details(QScrollArea):
 
         v.addWidget(heading("Tags"))
         self.tag_hint = QLabel("Grey tags were found in the file or guessed from the name — click one to confirm it.")
-        self.tag_hint.setWordWrap(True); self.tag_hint.setStyleSheet("color:#6b7280; font-size:11px;")
+        self.tag_hint.setWordWrap(True); self.tag_hint.setStyleSheet("color:#8b919a; font-size:11px;")
         v.addWidget(self.tag_hint)
         self.tags = FlowRow(per_row=3); v.addWidget(self.tags)
         self.tag_edit = QLineEdit(); self.tag_edit.setPlaceholderText("Add a tag and press Enter")
@@ -96,8 +96,8 @@ class Details(QScrollArea):
 
         v.addWidget(heading("Where it is"))
         self.where = QLabel(""); self.where.setWordWrap(True); self.where.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.where.setStyleSheet("color:#374151; font-size:11px;"); v.addWidget(self.where)
-        self.heard = QLabel(""); self.heard.setStyleSheet("color:#6b7280;"); v.addWidget(self.heard)
+        self.where.setStyleSheet("color:palette(window-text); font-size:11px;"); v.addWidget(self.where)
+        self.heard = QLabel(""); self.heard.setStyleSheet("color:#8b919a;"); v.addWidget(self.heard)
         if audition is not None:
             self.aud_slot.addWidget(audition)
         self.show_row(None)
@@ -157,7 +157,7 @@ class Details(QScrollArea):
             from ..library import ptypes
             t = ", ".join(ptypes.unpack(row.get("ptypes")) or [ptypes.UNKNOWN])
             how = ptypes.how(row)
-            parts.append(f"<b>Type:</b> {t} <span style='color:#6b7280;'>({how} · right-click → Set type…)</span>")
+            parts.append(f"<b>Type:</b> {t} <span style='color:#8b919a;'>({how} · right-click → Set type…)</span>")
         if row.get("is_factory"):
             parts.append("<span style='background:#fde7c7; color:#7c2d12; font-weight:700;'>&nbsp;F&nbsp;</span> "
                          "A factory preset — its slot on the synth is locked")
@@ -173,7 +173,7 @@ class Details(QScrollArea):
                 names = ", ".join(x["place"] or "" for x in ss[:12]) + (f" and {len(ss) - 12} more" if len(ss) > 12 else "")
                 parts.append(f"<span style='background:#d8f0e4; color:#065f46; font-weight:600;'>&nbsp;On the "
                              f"{SYNTH_LABEL.get(syn, syn)}&nbsp;</span> {names} "
-                             f"<span style='color:#6b7280;'>— as read {time.strftime('%d %b %H:%M', time.localtime(when))}</span>")
+                             f"<span style='color:#8b919a;'>— as read {time.strftime('%d %b %H:%M', time.localtime(when))}</span>")
         else:
             init = self.db.last_init(row["synth"]) if row["synth"] in SYNTH_LABEL else None
             parts.append("Not on the synth" + (f" — as of the last read" if init else
@@ -197,13 +197,13 @@ class Details(QScrollArea):
                 b.setToolTip("Click to remove")
                 b.clicked.connect(lambda _=False, n=t["name"]: self._tag(n, False))
             else:
-                b.setStyleSheet("background:#e5e7eb; color:#6b7280; border-radius:9px; padding:2px 8px;")
+                b.setStyleSheet("background:#e5e7eb; color:#8b919a; border-radius:9px; padding:2px 8px;")
                 b.setToolTip(f"From the {'file' if t['origin'] == 'file' else 'name'} — click to confirm")
                 b.clicked.connect(lambda _=False, n=t["name"]: self._tag(n, True))
             self.tags.add(b)
         for t in self.db.all_tags():
             if t["grp"] and t["name"] not in have:
-                b = QPushButton("+ " + t["name"]); b.setFlat(True); b.setStyleSheet("color:#2563eb; text-align:left;")
+                b = QPushButton("+ " + t["name"]); b.setFlat(True); b.setStyleSheet("color:#3b82f6; text-align:left;")
                 b.clicked.connect(lambda _=False, n=t["name"]: self._tag(n, True))
                 self.starter.add(b)
         comp = QCompleter([t["name"] for t in self.db.all_tags()]); comp.setCaseSensitivity(Qt.CaseInsensitive)
@@ -217,7 +217,7 @@ class Details(QScrollArea):
         manual = [c for c in self.db.crates() if not c["query"]]
         if not manual:
             l = QLabel("No crates yet — right-click patches → Add to crate → New crate…")
-            l.setStyleSheet("color:#6b7280;"); l.setWordWrap(True); self.crate_box.addWidget(l); return
+            l.setStyleSheet("color:#8b919a;"); l.setWordWrap(True); self.crate_box.addWidget(l); return
         mine = set(self.db.crates_of(self.row["hash"])) if self.row else set()
         for c in manual:
             cb = QCheckBox(c["name"]); cb.setChecked(c["name"] in mine); cb.setEnabled(self.row is not None)

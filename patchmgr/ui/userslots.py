@@ -194,7 +194,10 @@ class ClearDialog(SlotsDialog):
         self.prog = QSpinBox(); self.prog.setRange(1, 16); self.prog.setValue(16)
         row2.addWidget(self.bank); row2.addWidget(QLabel("-")); row2.addWidget(self.prog)
         self.read_init_btn = QPushButton("Read it"); self.read_init_btn.clicked.connect(self.read_init)
-        row2.addWidget(self.read_init_btn); row2.addStretch(1)
+        row2.addWidget(self.read_init_btn)
+        row2.addWidget(QLabel("  or, with Basic Program on the panel (not saved):"))
+        self.panel_btn = QPushButton("Take it from the Take 5 now"); self.panel_btn.clicked.connect(self.take_from_panel)
+        row2.addWidget(self.panel_btn); row2.addStretch(1)
         self.top.addLayout(row2)
         row3 = QHBoxLayout()
         row3.addWidget(QLabel("<b>2 · Read the user slots</b>"))
@@ -237,6 +240,12 @@ class ClearDialog(SlotsDialog):
         userslots.save_init(self.db, self.root, m)
         self.init = userslots.load_init(self.db, self.root)
         self._show_init()
+
+    def take_from_panel(self):
+        got = take_init_from_panel(self, self.drv, self.db, self.root) if self.ready() else None
+        if got:
+            self.init = got
+            self._show_init()
 
     def read_user(self):
         if not self.ready():
@@ -345,15 +354,7 @@ class SendDialog(SlotsDialog):
             + ". Pick a slot below: green slots are free (the init program), grey ones hold a sound in your library, "
               "amber ones hold a sound in no source — it is kept in Sources › User before it is written over. "
               "Factory banks F1–F16 are never written. Each slot is read first, kept in Backups, and checked after.")
-        self.grid = QTableWidget(16, 16)
-        self.grid.setHorizontalHeaderLabels([f"{p:02d}" for p in range(1, 17)])
-        self.grid.setVerticalHeaderLabels([f"U{b}" for b in range(1, 17)])
-        self.grid.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.grid.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.grid.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.grid.verticalHeader().setDefaultSectionSize(20)
-        self.grid.setMinimumHeight(16 * 20 + 30)
-        self.grid.setStyleSheet("QTableWidget { font-size: 8pt; }")
+        self.grid = make_grid()
         self.grid.cellClicked.connect(self.pick)
         self.top.addWidget(self.grid)
         row = QHBoxLayout()
@@ -371,14 +372,7 @@ class SendDialog(SlotsDialog):
         self.status.setText("Click a slot to choose where the first patch goes. Nothing has been written yet.")
 
     def paint_grid(self):
-        sm = userslots.slot_map(self.db)
-        for b in range(1, 17):
-            for p in range(1, 17):
-                v = sm.get((b, p))
-                it = QTableWidgetItem(v["name"] if v else "")
-                it.setToolTip(f"U{b}-{p:02d}: " + (f"{v['name']} — {v['state']}" if v else "not read yet"))
-                it.setBackground(QColor(STATE_COLOUR.get(v["state"], "#ffffff") if v else "#ffffff"))
-                self.grid.setItem(b - 1, p - 1, it)
+        fill_grid(self.grid, self.db)
 
     def pick(self, r, c):
         """Read the chosen slot on the spot, so the name shown is what is really there (spec 5.2)."""
@@ -491,3 +485,140 @@ class SyncDialog(SlotsDialog):
     def write(self):
         if self.ready():
             super().write()
+
+
+# ---------------------------------------------------------------- the init program from the panel
+def take_init_from_panel(parent, drv, db, root):
+    """Read the Take 5's edit buffer and keep it as the init program (Basic Program). -> load_init() or None."""
+    m = drv.read_edit_buffer()
+    if m is None:
+        QMessageBox.warning(parent, TITLE, "The Take 5 did not send its current sound. Check its USB cable.")
+        return None
+    h, name = userslots.hash_of(m)
+    if QMessageBox.question(parent, TITLE, f"The Take 5 is playing <b>{name}</b>. Use it as the empty program "
+                            "(the init) for every slot you initialize?") != QMessageBox.Yes:
+        return None
+    userslots.save_init(db, root, m)
+    return userslots.load_init(db, root)
+
+
+def fill_grid(grid, db, mark=None):
+    """Paint the 16 × 16 user-slot grid from the last read (spec 5.2). mark: a set of (bank, prog) to outline."""
+    sm = userslots.slot_map(db)
+    for b in range(1, 17):
+        for p in range(1, 17):
+            v = sm.get((b, p))
+            it = QTableWidgetItem(v["name"] if v else "")
+            it.setToolTip(f"U{b}-{p:02d}: " + (f"{v['name']} — {v['state']}" if v else "not read yet"))
+            it.setBackground(QColor(STATE_COLOUR.get(v["state"], "#ffffff") if v else "#ffffff"))
+            grid.setItem(b - 1, p - 1, it)
+
+
+def make_grid(multi=False):
+    g = QTableWidget(16, 16)
+    g.setHorizontalHeaderLabels([f"{p:02d}" for p in range(1, 17)])
+    g.setVerticalHeaderLabels([f"U{b}" for b in range(1, 17)])
+    g.setEditTriggers(QAbstractItemView.NoEditTriggers)
+    g.setSelectionMode(QAbstractItemView.ExtendedSelection if multi else QAbstractItemView.SingleSelection)
+    g.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+    g.verticalHeader().setDefaultSectionSize(20)
+    g.setMinimumHeight(16 * 20 + 30)
+    g.setStyleSheet("QTableWidget { font-size: 8pt; } QTableWidget::item:selected { background: #2f80c3; color: white; }")
+    return g
+
+
+# ---------------------------------------------------------------- Initialize slots (Nigel, 27 Nov 2026)
+class InitDialog(SlotsDialog):
+    """Set the user slots you pick to the init program (Basic Program), the Take 5's empty preset."""
+
+    def __init__(self, parent, session, db, root):
+        super().__init__(parent, session, db, root, "Initialize Take 5 slots", "Now holds")
+        self.resize(900, 800)
+        self.intro.setText(
+            "Sets the slots you pick to the Take 5's empty program, <b>Basic Program</b>, so they are free. Click a "
+            "slot, drag across a range, Ctrl-click to add slots, or click a bank (U1…) to take the whole row. "
+            "Each slot is read first and kept in Backups; a sound in no source is kept in Sources › User first. "
+            "Factory banks F1–F16 are never written. Undo is on the Take 5 menu.")
+        row = QHBoxLayout()
+        self.init_lbl = QLabel(); self.init_lbl.setWordWrap(True)
+        row.addWidget(QLabel("<b>Empty program:</b>")); row.addWidget(self.init_lbl, 1)
+        self.panel_btn = QPushButton("Take it from the Take 5 now")
+        self.panel_btn.setToolTip("Choose Init Program (Basic Program) on the Take 5's panel first — no need to save it")
+        self.panel_btn.clicked.connect(self.take_from_panel)
+        row.addWidget(self.panel_btn)
+        self.top.addLayout(row)
+        self.grid = make_grid(multi=True)
+        self.grid.itemSelectionChanged.connect(self.plan)
+        self.top.addWidget(self.grid)
+        row2 = QHBoxLayout()
+        self.read_all_btn = QPushButton("Read U1–U16 (about 40 s)")
+        self.read_all_btn.setToolTip("Refresh the grid from the Take 5; otherwise it shows the last read")
+        self.read_all_btn.clicked.connect(self.read_all)
+        row2.addWidget(self.read_all_btn); row2.addStretch(1)
+        self.top.addLayout(row2)
+        self.go.show(); self.go.setEnabled(False)
+        self.init = userslots.load_init(db, root)
+        self._show_init()
+        fill_grid(self.grid, db)
+        self.status.setText("Pick the slots to initialize. Nothing has been written yet.")
+
+    def _show_init(self):
+        if self.init:
+            self.init_lbl.setText(f"<span style='color:#065f46'><b>{self.init[2]}</b> (kept from before)</span>")
+        else:
+            self.init_lbl.setText("<span style='color:#b45309'>Not taken yet — choose Init Program on the Take 5's "
+                                  "panel, then press the button.</span>")
+        self.plan()
+
+    def take_from_panel(self):
+        got = take_init_from_panel(self, self.drv, self.db, self.root) if self.ready() else None
+        if got:
+            self.init = got
+            self._show_init()
+            fill_grid(self.grid, self.db)
+
+    def chosen(self):
+        return sorted({(ix.row() + 1, ix.column() + 1) for ix in self.grid.selectedIndexes()})
+
+    def plan(self):
+        if not self.init:
+            self.show_steps([]); self.summary.setText(""); return
+        steps, already = userslots.init_plan(self.db, self.chosen(), self.init[0])
+        self.show_steps(steps)
+        n = len(self.chosen())
+        self.summary.setText(f"{n} slot{'s' if n != 1 else ''} picked: <b>{len(steps)} to initialize</b>"
+                             + (f", {already} already hold {self.init[2]}." if already else "."))
+
+    def read_all(self):
+        if not self.ready():
+            return
+        drv = self.drv
+        self.start(lambda prog, canc: drv.read_slots(userslots.USER_BANKS, prog, canc), self._after_read)
+
+    def _after_read(self, reads):
+        sel = self.chosen()
+        self.db.set_slots("take5", [{"bank": r.bank, "slot": r.slot, "place": r.place, "name": r.name, "hash": r.hash}
+                                    for r in reads])
+        self.db.con.commit()
+        fill_grid(self.grid, self.db)
+        for b, p in sel:
+            self.grid.item(b - 1, p - 1).setSelected(True)
+        self.plan()
+        self.status.setText(f"Read {len(reads)} slots. Nothing has been written yet.")
+
+    def go_text(self, n):
+        return f"Initialize {n} slot{'s' if n != 1 else ''}"
+
+    def run_label(self):
+        return "Initialize slots"
+
+    def write(self):
+        if self.ready():
+            super().write()
+
+    def written(self, res):
+        super().written(res)
+        if res.kept:
+            self.status.setText(self.status.text() + f"<br>{len(res.kept)} sound(s) that were in no source are now in "
+                                "Sources › User: " + ", ".join(res.kept[:6]))
+        fill_grid(self.grid, self.db)

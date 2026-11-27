@@ -786,6 +786,7 @@ class MainWindow(QMainWindow):
                                   lambda: self.open_send_slot())
                 a.setEnabled(ok and bool(t5))
                 sub.addAction("Sync…", lambda: self.open_user_slots("SyncDialog")).setEnabled(ok)
+                sub.addAction("Initialize slots to Basic Program…", lambda: self.open_user_slots("InitDialog")).setEnabled(ok)
                 sub.addSeparator()
                 for text, cls in (("Clear user slots…", "ClearDialog"), ("Fill user slots…", "FillDialog"),
                                   ("Undo the last write…", "UndoDialog")):
@@ -820,7 +821,7 @@ class MainWindow(QMainWindow):
         dlg = (us.SendDialog(self, self.session, self.db, root, patches) if cls == "SendDialog"
                else getattr(us, cls)(self, self.session, self.db, root))
         dlg.exec()
-        if cls in ("ClearDialog", "SendDialog", "SyncDialog"):
+        if cls in ("ClearDialog", "SendDialog", "SyncDialog", "InitDialog"):
             self.open_rebuild(["take5"], quiet=True)       # sounds kept from the user slots join Patches
         self.fill_tree(); self.refresh()
 

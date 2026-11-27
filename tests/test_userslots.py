@@ -21,6 +21,7 @@ class WritableTake5:
                 self.slots[(b, p)] = t5_program(b, p, f"F{fb - 15}P{p + 1}")
         self.bad_slot = bad_slot
         self.writes = []
+        self.edit = None
 
     def send(self, msg):
         msg = bytes(msg)
@@ -34,6 +35,9 @@ class WritableTake5:
         if msg[3] == 0x05:
             m = self.slots[(msg[4], msg[5])]
             m = m[:4] + bytes([msg[4], msg[5]]) + m[6:]
+            return m if test(m) else None
+        if msg[3] == 0x06 and self.edit is not None:            # the edit buffer: what the panel is playing
+            m = b"\xF0\x01\x35\x03" + self.edit[6:]
             return m if test(m) else None
         return None
 
@@ -203,3 +207,27 @@ def test_the_init_program_is_a_patch_too(lib):
     assert ih not in {p["hash"] for p in userslots.your_patches(db)}     # but Fill never sends it
     db.set_slots("take5", [{"bank": 2, "slot": 2, "hash": ih, "place": "U2-02", "name": "Basic Program"}])
     assert userslots.slot_map(db)[(2, 2)]["state"] == "free"              # a slot holding it is still free
+
+
+def test_initialize_picked_slots_from_the_panel(lib):
+    """Nigel, 27 Nov 2026: set any slots he picks to Basic Program, taken from the panel without saving it."""
+    root, db, dbp = lib
+    synth = WritableTake5()
+    t5 = Take5(synth)
+    synth.edit = t5_program(0, 0, "Basic Program")                  # Init Program chosen on the panel
+    e = t5.read_edit_buffer()
+    ih, name = userslots.save_init(db, str(root), e)
+    assert name == "Basic Program"
+    init = userslots.load_init(db, str(root))[0]
+    synth.slots[(4, 1)] = program_to(init, 5, 2)                   # U5-02 already empty
+    reads = t5.read_slots(banks=[5])
+    db.set_slots("take5", [{"bank": r.bank, "slot": r.slot, "hash": r.hash, "place": r.place, "name": r.name}
+                           for r in reads])
+    steps, already = userslots.init_plan(db, [(5, 1), (5, 2), (5, 3), (5, 3)], init)
+    assert [s.place for s in steps] == ["U5-01", "U5-03"] and already == 1
+    res = userslots.run(t5, db, str(root), steps, "Initialize slots")
+    assert res.done == 2
+    assert t5_payload(synth.slots[(4, 0)]) == t5_payload(init) and t5_payload(synth.slots[(4, 2)]) == t5_payload(init)
+    assert t5_payload(synth.slots[(4, 3)]) != t5_payload(init)        # U5-04 not picked: untouched
+    assert userslots.slot_map(db)[(5, 1)]["state"] == "free"
+    assert userslots.last_run(db) == res.run                        # Undo the last write… finds it

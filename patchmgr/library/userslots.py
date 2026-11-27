@@ -225,6 +225,29 @@ def send_plan(db, patches: list, start: tuple[int, int]) -> tuple[list[Step], li
     return steps, []
 
 
+def init_plan(db, chosen: list[tuple[int, int]], init: bytes) -> tuple[list[Step], int]:
+    """Initialize the chosen user slots to the init program (Basic Program). Slots already holding it are left alone.
+    -> (steps, how many already held it)."""
+    ih, iname = hash_of(init)
+    sm = slot_map(db)
+    steps, already = [], 0
+    for b, n in sorted(set(chosen)):
+        now = sm.get((b, n))
+        if now and now["hash"] == ih:
+            already += 1
+            continue
+        if not now:
+            why = "not read yet (read and kept in Backups first)"
+        elif now["state"] == "unknown":
+            why = f"'{now['name']}' — kept in Sources › User first"
+        elif now["state"] == "yours":
+            why = f"'{now['name']}' — safe in your library"
+        else:
+            why = f"'{now['name']}'"
+        steps.append(Step(b, n, init, ih, iname, now["hash"] if now else None, why))
+    return steps, already
+
+
 def for_crate(db) -> int:
     """The id of the "For Take 5" crate, made if it isn't there."""
     cid = db.one("SELECT id FROM crate WHERE name=?", (FOR_CRATE,))

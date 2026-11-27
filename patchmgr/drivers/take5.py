@@ -116,6 +116,12 @@ class Take5:
             return "(no reply)", False
         return t5_name(unpack_ms(t5_payload(e))), t5_payload(e) == t5_payload(data)
 
+    def read_edit_buffer(self):
+        """The program now in the Take 5's edit buffer (an Edit Buffer Data Dump), or None. Used to take the init
+        program — Basic Program — straight from the panel, without saving it to a slot."""
+        e = self.dev.request(REQ_EDIT, is_edit_dump, 2.0)
+        return e
+
     def check_loaded(self, data: bytes) -> bool:
         """Read the edit buffer back and compare with what was sent (used by the M2 self-check)."""
         e = self.dev.request(REQ_EDIT, is_edit_dump, 2.0)

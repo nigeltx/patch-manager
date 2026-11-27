@@ -1,3 +1,17 @@
+Initialize Take 5 slots to Basic Program. Version 0.9.2.
+
+Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.
+
+- Synths ▾ › Take 5 › Initialize slots to Basic Program…: a 16 × 16 grid of the user slots. Click a slot, drag
+  across a range, Ctrl-click to add more, or click a bank (U1…) to take the whole row; then Initialize. Slots
+  already holding Basic Program are left alone.
+- The empty program is taken straight from the Take 5: choose Init Program (Basic Program) on the panel and press
+  "Take it from the Take 5 now" — no need to save it to a slot. The app keeps it, so this is needed only once.
+  Clear user slots… has the same button.
+- As with every write: each slot is read and kept in Backups first, a sound in no source is kept in
+  Sources › User, each write is read back and checked, factory banks are never written, and "Undo the last
+  write…" puts the slots back.
+
 The Take 5's Basic Program as a patch. Version 0.9.1.
 
 Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.

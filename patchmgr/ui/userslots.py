@@ -538,7 +538,7 @@ def make_grid(multi=False):
 class InitDialog(SlotsDialog):
     """Set the user slots you pick to the init program (Basic Program), the Take 5's empty preset."""
 
-    def __init__(self, parent, session, db, root):
+    def __init__(self, parent, session, db, root, preselect=None):
         super().__init__(parent, session, db, root, "Initialize Take 5 slots", "Now holds")
         self.resize(900, 800)
         self.intro.setText(
@@ -565,8 +565,10 @@ class InitDialog(SlotsDialog):
         self.top.addLayout(row2)
         self.go.show(); self.go.setEnabled(False)
         self.init = userslots.load_init(db, root)
-        self._show_init()
         fill_grid(self.grid, db)
+        for b, p in preselect or []:                  # from a right-click in the bank view
+            self.grid.item(b - 1, p - 1).setSelected(True)
+        self._show_init()
         self.status.setText("Pick the slots to initialize. Nothing has been written yet.")
 
     def _show_init(self):

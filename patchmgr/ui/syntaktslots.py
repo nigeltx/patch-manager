@@ -172,6 +172,34 @@ class SyntaktSyncDialog(_Syntakt, SlotsDialog):
             super().write()
 
 
+class SyntaktEmptyDialog(_Syntakt, SlotsDialog):
+    """Initialize bank H slots to empty (from a right-click in the bank view)."""
+
+    def __init__(self, parent, session, db, root, slots):
+        SlotsDialog.__init__(self, parent, session, db, root, "Initialize Syntakt slots", "Now holds")
+        self.intro.setText(
+            "Empties the slots below in bank H. Each sound is read first and kept in <i>Syntakt › Backups</i>, and in "
+            "Sources › User if it is in no source, so nothing is lost; Undo on the Syntakt menu puts them back. Banks "
+            "A–G and H128 are never touched.")
+        steps, already = ss.empty_plan(db, slots)
+        self.show_steps(steps)
+        self.summary.setText(f"<b>{len(steps)} slot{'s' if len(steps) != 1 else ''} to empty</b>"
+                             + (f", {already} already empty." if already else "."))
+        self.go.show()
+        self.go.setEnabled(bool(steps))
+        self.status.setText("Nothing has been written yet.")
+
+    def go_text(self, n):
+        return f"Empty {n} slot{'s' if n != 1 else ''}"
+
+    def run_label(self):
+        return "Initialize slots"
+
+    def write(self):
+        if self.ready():
+            super().write()
+
+
 class SyntaktUndoDialog(_Syntakt, UndoDialog):
     pass
 

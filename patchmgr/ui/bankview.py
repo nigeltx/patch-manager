@@ -6,13 +6,15 @@
 
 What each slot holds comes from the last read of the synth (slot_state). Colours: green — a patch in your library;
 amber — a sound in no source yet (Get from synth keeps it); grey text — a factory bank; blank — empty or not read.
-Clicking a slot holding a library patch selects it, as if it were picked in the list.
+Clicking a slot holding a library patch selects it, as if it were picked in the list. Right-click initializes the
+selected slots (Nigel, 27 Nov 2026): Take 5 user slots to Basic Program, Syntakt bank H slots to empty. Factory banks,
+H128 (audition) and the Sub 37 (until its writes arrive) are not offered.
 """
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFont
-from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QHBoxLayout, QHeaderView, QLabel, QTableWidget,
+from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QHBoxLayout, QHeaderView, QLabel, QMenu, QTableWidget,
                                QTableWidgetItem, QVBoxLayout, QWidget)
 
 from ..library import factory
@@ -47,6 +49,7 @@ def layout_for(synth: str, syn_bank: int = 1):
 
 class BankView(QWidget):
     picked = Signal(str)                             # the hash of a library patch clicked in the grid
+    initialize = Signal(str, list)                   # synth, [(bank, slot)] to set to the empty program
 
     def __init__(self, db):
         super().__init__()
@@ -62,7 +65,9 @@ class BankView(QWidget):
         v.addLayout(top)
         self.grid = QTableWidget()
         self.grid.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.grid.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.grid.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.grid.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.grid.customContextMenuRequested.connect(self._menu)
         self.grid.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.grid.verticalHeader().setDefaultSectionSize(22)
         self.grid.setStyleSheet("QTableWidget { font-size: 8pt; } "
@@ -76,6 +81,7 @@ class BankView(QWidget):
         self.legend.setTextFormat(Qt.RichText)
         v.addWidget(self.legend)
         self.cells = {}
+        self.where = {}                              # (row, col) → (bank, slot)
 
     def show_synth(self, synth: str, label: str, library_hashes: set[str]):
         self.synth, self.label, self.library = synth, label, library_hashes
@@ -121,6 +127,7 @@ class BankView(QWidget):
                     it.setBackground(QColor(FACTORY_BG))
             self.grid.setItem(r, c, it)
             self.cells[(r, c)] = st
+            self.where[(r, c)] = (b, s)
         when = self.db.one("SELECT MAX(read_at) FROM slot_state WHERE synth=?", (synth,))
         import time
         stamp = time.strftime("%d %b %Y %H:%M", time.localtime(when)) if when else "never"
@@ -132,3 +139,33 @@ class BankView(QWidget):
         st = self.cells.get((r, c))
         if st and st["hash"] in self.library:
             self.picked.emit(st["hash"])
+
+    # ---------------------------------------------------------------- right-click: initialize
+    def writable(self, bank, slot) -> bool:
+        if self.synth == "take5":
+            return 1 <= bank <= 16
+        if self.synth == "syntakt":
+            return bank == 8 and slot < 128
+        return False
+
+    def _menu(self, pos):
+        ix = self.grid.indexAt(pos)
+        if ix.isValid() and not self.grid.item(ix.row(), ix.column()).isSelected():
+            self.grid.clearSelection()
+            self.grid.item(ix.row(), ix.column()).setSelected(True)
+        picked = sorted({self.where[(i.row(), i.column())] for i in self.grid.selectedIndexes()})
+        ok = [p for p in picked if self.writable(*p)]
+        m = QMenu(self)
+        what = {"take5": "Basic Program", "syntakt": "empty"}.get(self.synth)
+        if not what:
+            a = m.addAction("Initialize… (Sub 37 slot writes come with milestone M5)")
+            a.setEnabled(False)
+        else:
+            one = place(self.synth, *ok[0]) if len(ok) == 1 else f"{len(ok)} slots"
+            a = m.addAction(f"Initialize {one} to {what}…" if ok else "Initialize… (factory or audition slots can't be)")
+            a.setEnabled(bool(ok))
+            a.triggered.connect(lambda: self.initialize.emit(self.synth, ok))
+            if len(ok) < len(picked) and ok:
+                skip = m.addAction(f"({len(picked) - len(ok)} factory or audition slot(s) left out)")
+                skip.setEnabled(False)
+        m.exec(self.grid.viewport().mapToGlobal(pos))

@@ -104,6 +104,24 @@ def send_plan(db, patches: list, start: int) -> tuple[list[Step], list]:
     return steps, []
 
 
+def empty_plan(db, chosen: list[int]) -> tuple[list[Step], int]:
+    """Initialize H slots to empty (the Syntakt has no init sound to write): each sound is kept in Backups (and in
+    Sources › User if in no source) and the slot cleared. Already-empty slots are left. -> (steps, already empty)."""
+    sm = slot_map(db)
+    steps, already = [], 0
+    for s in sorted(set(chosen)):
+        if s not in SLOTS:
+            continue
+        now = sm.get(s)
+        if now and now["state"] == "free":
+            already += 1
+            continue
+        why = f"'{now['name']}'" + (" — kept in Sources › User first" if now["state"] == "unknown" else "") if now \
+            else "not read yet (read and kept in Backups first)"
+        steps.append(Step(BANK, s, None, "", EMPTY, _expect(now), why, synth=SYNTH))
+    return steps, already
+
+
 def for_crate(db) -> int:
     cid = db.one("SELECT id FROM crate WHERE name=?", (FOR_CRATE,))
     return cid if cid else db.new_crate(FOR_CRATE)

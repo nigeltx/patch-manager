@@ -137,3 +137,19 @@ def test_sync_fills_empty_h_slots_with_the_crate(lib):
     res = ss.run(synth, db, str(root), steps, "Sync")
     assert res.done == 2 and synth.h[2][0] == "SOMETHING"
     assert ss.sync_plan(db)[0] == []
+
+
+def test_initialize_h_slots_to_empty_and_undo(lib):
+    root, db = lib
+    m = _mine(db)
+    synth = _synth(db, {5: ("PANEL SOUND", body("PANEL SOUND", 5)),
+                        6: ("DARK PAD", ss.payload_of(bytes(m["DARK PAD"]["data"]))[1])})
+    ss.remember_read(db, synth.read_banks())
+    steps, already = ss.empty_plan(db, [5, 6, 7, 128])
+    assert [s.prog for s in steps] == [5, 6] and already == 1          # H7 empty; H128 never offered
+    assert "kept in Sources › User first" in steps[0].why
+    res = ss.run(synth, db, str(root), steps, "Initialize slots")
+    assert res.done == 2 and not synth.h and res.kept == ["H:005 PANEL SOUND"]
+    assert ss.slot_map(db)[5]["state"] == "free"
+    ss.run(synth, db, str(root), ss.undo_steps(db, res.run), "Undo Initialize slots")
+    assert synth.h[5][0] == "PANEL SOUND" and synth.h[6][0] == "DARK PAD"

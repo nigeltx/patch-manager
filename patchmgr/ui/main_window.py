@@ -178,6 +178,7 @@ class MainWindow(QMainWindow):
         from .bankview import BankView
         self.bankview = BankView(db)                 # Targets › Presets laid out as the synth's banks (index 2)
         self.bankview.picked.connect(self._bank_picked)
+        self.bankview.initialize.connect(self._bank_initialize)
         self.center.addWidget(self.bankview)
         self.bg_thread = None
 
@@ -589,6 +590,22 @@ class MainWindow(QMainWindow):
                 self.table.clearSelection()
                 self.table.selectRow(self.proxy.mapFromSource(self.model.index(i, 0)).row())
                 return
+
+    def _bank_initialize(self, synth, slots):
+        """Right-click › Initialize in the bank view: Take 5 slots to Basic Program, Syntakt H slots to empty."""
+        from . import syntaktslots as sy
+        from . import userslots as us
+        root = self._root_or_warn()
+        if not root:
+            return
+        if synth == "take5":
+            dlg = us.InitDialog(self, self.session, self.db, root, preselect=slots)
+        else:
+            dlg = sy.SyntaktEmptyDialog(self, self.session, self.db, root, [s for _b, s in slots])
+        dlg.exec()
+        Scanner(self.db.path, [(root, "library")]).run()   # sounds kept from the slots join the library
+        self.open_rebuild([synth], quiet=True)
+        self.fill_tree(); self.refresh()
 
     def _tree_menu(self, pos):
         it = self.tree.itemAt(pos)

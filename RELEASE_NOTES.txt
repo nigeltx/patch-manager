@@ -1,3 +1,15 @@
+Initialize from the Presets grid. Version 0.10.3.
+
+Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.
+
+- In Targets › Presets, right-click a slot (or several — drag, Ctrl-click) › Initialize…:
+  - Take 5: opens Initialize slots with those slots already picked; they are set to Basic Program.
+  - Syntakt: the bank H slots are emptied (the Syntakt has no init sound to write).
+- As with every write, each sound is read first and kept in Backups (and in Sources › User if it is in no source),
+  and Undo the last write… on the synth's menu puts it back.
+- Factory banks (Take 5 F1–F16, Syntakt A–G), H128 and the Sub 37 are not offered; the menu says which slots were
+  left out.
+
 Presets laid out like the synth. Version 0.10.2.
 
 Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.

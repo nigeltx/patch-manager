@@ -1,3 +1,13 @@
+Basic Program is a factory patch. Version 0.9.3.
+
+Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.
+
+- The Take 5's Basic Program, kept in Take 5 › Sources › Factory › Init program, is now listed as a factory patch:
+  it shows the F badge, is found by the "factory" filter, and sits with the other factory sounds in the library.
+  It arrives in the library the first time you press "Take it from the Take 5 now" (Initialize slots… or
+  Clear user slots…), or at start if you already did.
+- It is still the empty program: a slot holding it counts as free, and Fill never sends it.
+
 Initialize Take 5 slots to Basic Program. Version 0.9.2.
 
 Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.

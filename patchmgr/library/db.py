@@ -68,8 +68,10 @@ MIGRATIONS = {
 # Banks that hold factory presets, as the synth's panel numbers them (spec 4.7, 5.5). Take 5: U = user, F = factory.
 FACTORY_BANKS_DEFAULT = {"take5": "F1-F16", "sub37": "1-9", "syntakt": "A-G", "deluge": ""}
 
-# A patch is factory when Initialize marked it, or when it is in a maker's Factory folder — never if it is blank.
-FACTORY_SQL = ("(p.blank = 0 AND COALESCE(p.factory, '') != 'no' AND (p.factory = 'read' OR EXISTS("
+# A patch is factory when Initialize marked it, or when it is in a Factory folder in Sources. A blank sound counts only
+# by the second route: the Take 5's Basic Program kept in Sources › Factory › Init program is a factory patch
+# (Nigel, 27 Nov 2026), while blank fills found in a read never are.
+FACTORY_SQL = ("(COALESCE(p.factory, '') != 'no' AND ((p.blank = 0 AND p.factory = 'read') OR EXISTS("
                "SELECT 1 FROM live_origin po JOIN source_file sf ON sf.id=po.file_id JOIN source s ON s.id=sf.source_id "
                "WHERE po.patch_id=p.id AND s.type='factory')))")
 

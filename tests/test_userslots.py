@@ -205,6 +205,8 @@ def test_the_init_program_is_a_patch_too(lib):
     assert ih in factory.library_hashes(db, "take5")
     assert ih in {w.hash for w in rebuild.wanted(db, "take5")}           # it goes into Patches
     assert ih not in {p["hash"] for p in userslots.your_patches(db)}     # but Fill never sends it
+    pid = db.one("SELECT id FROM patch WHERE hash=?", (ih,))
+    assert db.is_factory(pid)                                          # a factory patch (Nigel, 27 Nov 2026)
     db.set_slots("take5", [{"bank": 2, "slot": 2, "hash": ih, "place": "U2-02", "name": "Basic Program"}])
     assert userslots.slot_map(db)[(2, 2)]["state"] == "free"              # a slot holding it is still free
 

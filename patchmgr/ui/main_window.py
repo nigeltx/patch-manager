@@ -792,6 +792,14 @@ class MainWindow(QMainWindow):
                                   ("Undo the last write…", "UndoDialog")):
                     a = sub.addAction(text, lambda c=cls: self.open_user_slots(c))
                     a.setEnabled(ok or cls == "FillDialog")
+            if key == "syntakt":
+                sub.addSeparator()
+                st = [r for r in self.selected_rows() if r["synth"] == "syntakt" and r["kind"] == "sound"]
+                a = sub.addAction(f"Send {len(st)} selected to a bank H slot…" if st
+                                  else "Send to a bank H slot… (select Syntakt sounds)", lambda: self.open_send_syntakt())
+                a.setEnabled(ok and bool(st))
+                sub.addAction("Sync…", lambda: self.open_user_slots("SyntaktSyncDialog")).setEnabled(ok)
+                sub.addAction("Undo the last write…", lambda: self.open_user_slots("SyntaktUndoDialog")).setEnabled(ok)
             sub.addSeparator()
             when = time.strftime('%d %b %Y', time.localtime(init["run_at"])) if init else None
             info = sub.addAction(f"Initialized {when}: {init['marked_factory']} factory presets" if init
@@ -808,21 +816,35 @@ class MainWindow(QMainWindow):
                     "data": self.db.one("SELECT data FROM patch WHERE hash=?", (r["hash"],))} for r in rows]
         self.open_user_slots("SendDialog", patches)
 
+    def open_send_syntakt(self, rows=None):
+        """Send to a bank H slot (spec 7.4) for the selected Syntakt sounds."""
+        rows = [r for r in (rows or self.selected_rows()) if r["synth"] == "syntakt" and r["kind"] == "sound"]
+        if not rows:
+            QMessageBox.information(self, APP, "Select one or more Syntakt sounds in the list first.")
+            return
+        patches = [{"hash": r["hash"], "name": r["name"],
+                    "data": self.db.one("SELECT data FROM patch WHERE hash=?", (r["hash"],))} for r in rows]
+        self.open_user_slots("SyntaktSendDialog", patches)
+
     def open_user_slots(self, cls, patches=None):
-        """Take 5 user slots (spec 5.2, 7.1, 7.8–7.10)."""
+        """Slot writes: Take 5 user slots (spec 5.2, 7.1, 7.8–7.10) and Syntakt bank H (7.4)."""
         from . import userslots as us
         root = self._root_or_warn()
         if not root:
             return
-        if not layout.is_new_layout(root, "take5"):
-            QMessageBox.information(self, APP, "Reorganize the library first (Library ▾ › Reorganize library…), so your "
-                                               "own sounds have a place in Sources › User before any slot is cleared.")
+        from . import syntaktslots as sy
+        synth = "syntakt" if cls.startswith("Syntakt") else "take5"
+        mod = sy if synth == "syntakt" else us
+        if not layout.is_new_layout(root, synth):
+            QMessageBox.information(self, APP, "Reorganize the library first (Library ▾ › Reorganize library…).")
             return
-        dlg = (us.SendDialog(self, self.session, self.db, root, patches) if cls == "SendDialog"
-               else getattr(us, cls)(self, self.session, self.db, root))
+        dlg = (getattr(mod, cls)(self, self.session, self.db, root, patches) if cls.endswith("SendDialog")
+               else getattr(mod, cls)(self, self.session, self.db, root))
         dlg.exec()
-        if cls in ("ClearDialog", "SendDialog", "SyncDialog", "InitDialog"):
-            self.open_rebuild(["take5"], quiet=True)       # sounds kept from the user slots join Patches
+        if not cls.endswith("UndoDialog") and cls != "FillDialog":
+            # sounds kept in Sources › User before they were written over join the library and Patches
+            Scanner(self.db.path, [(root, "library")]).run()
+            self.open_rebuild([synth], quiet=True)
         self.fill_tree(); self.refresh()
 
     def _fill_get_menu(self):
@@ -1016,6 +1038,16 @@ class MainWindow(QMainWindow):
             a.setEnabled(self.session.ready("take5"))
             m.addAction(f"Add to '{uslots.FOR_CRATE}' (Sync sends it)",
                         lambda: (self.db.crate_add(uslots.for_crate(self.db), [r["hash"] for r in t5]),
+                                 self.fill_tree_counts_only()))
+        sy = [r for r in sounds if r["synth"] == "syntakt"]
+        if sy:
+            from ..library import syntaktslots as sslots
+            m.addSeparator()
+            a = m.addAction(f"Send to a Syntakt bank H slot… ({len(sy)})" if len(sy) > 1 else "Send to a Syntakt bank H slot…",
+                            lambda: self.open_send_syntakt(sy))
+            a.setEnabled(self.session.ready("syntakt"))
+            m.addAction(f"Add to '{sslots.FOR_CRATE}' (Sync sends it)",
+                        lambda: (self.db.crate_add(sslots.for_crate(self.db), [r["hash"] for r in sy]),
                                  self.fill_tree_counts_only()))
         rm = m.addMenu("Rate")
         for n in range(5, -1, -1):

@@ -15,6 +15,9 @@ plain modules, tests for every core behaviour, no clever metaprogramming.
   view live_origin = the copies that count; read queries use live_origin) (spec v1.12 4.12)
 - `patchmgr/library/userslots.py` + `ui/userslots.py` — Take 5 Clear / Fill user slots, Send to slot (grid), Sync with the
   "For Take 5" crate, Initialize picked slots to the init (Basic Program, taken from the edit buffer), undo (spec v1.12 5.2, 7.1, 7.8–7.10); run() keeps a sound in no source in Sources › User before writing over it
+- `patchmgr/library/syntaktslots.py` + `ui/syntaktslots.py` — Syntakt bank H Send to slot, Sync with "For Syntakt",
+  undo (spec 7.4, 7.8); H001–H127 only (A–G factory, H128 audition); the dialogs reuse ui/userslots.SlotsDialog
+  (class attrs SYNTH / LABEL / OPS pick the synth and the module that plans and runs the writes)
 - `patchmgr/updater.py` — self-update from GitHub releases (same file in each of Nigel's apps; repo must be public)
 - `patchmgr/ui` — windows; `tests` — `python -m pytest -q` must pass (QT_QPA_PLATFORM=offscreen)
 - `packaging` + `.github/workflows/build.yml` — PyInstaller + Inno Setup; every push to main builds an

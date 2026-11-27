@@ -36,11 +36,14 @@ class FnWorker(QObject):
 
 
 class SlotsDialog(QDialog):
-    """Table of steps + progress + one action button. Subclasses fill the steps."""
+    """Table of steps + progress + one action button. Subclasses fill the steps. SYNTH / LABEL / OPS say which synth
+    and which module plans and runs the writes (userslots for the Take 5, syntaktslots for the Syntakt)."""
+    SYNTH, LABEL, OPS = "take5", "Take 5", userslots
+
     def __init__(self, parent, session, db, root, title, last_col="Now"):
         super().__init__(parent)
         self.session, self.db, self.root = session, db, root
-        self.drv = session.drivers.get("take5") if session else None
+        self.drv = session.drivers.get(self.SYNTH) if session else None
         self.steps = []
         self.thread = self.worker = None
         self.setWindowTitle(title)
@@ -154,7 +157,8 @@ class SlotsDialog(QDialog):
     def write(self):
         todo = [s for s in self.steps if s.tick]
         label = self.run_label()
-        self.start(lambda prog, canc: userslots.run(self.drv, self.db, self.root, todo, label, prog, canc), self.written)
+        ops = self.OPS
+        self.start(lambda prog, canc: ops.run(self.drv, self.db, self.root, todo, label, prog, canc), self.written)
 
     def run_label(self):
         return "Write"
@@ -168,13 +172,13 @@ class SlotsDialog(QDialog):
             lines.append("Stopped when you asked; the slots not reached are as they were.")
         if res.failed:
             lines.append("<span style='color:#b91c1c'>" + res.failed + "</span>")
-        lines.append(f"The old programs are in <i>Take 5 › Backups</i>. Undo is on the Take 5 menu.")
+        lines.append(f"What was there before is in <i>{self.LABEL} › Backups</i>. Undo is on the {self.LABEL} menu.")
         self.status.setText("<br>".join(lines))
         self.go.hide(); self.close_btn.setText("Close"); self.close_btn.setDefault(True)
 
     def ready(self):
-        if not self.drv or not self.session.ready("take5"):
-            self.status.setText("<b>The Take 5 is not connected.</b> Switch it on and check its USB cable.")
+        if not self.drv or not self.session.ready(self.SYNTH):
+            self.status.setText(f"<b>The {self.LABEL} is not connected.</b> Switch it on and check its USB cable.")
             return False
         return True
 
@@ -317,13 +321,13 @@ class FillDialog(SlotsDialog):
 # ---------------------------------------------------------------- Undo
 class UndoDialog(SlotsDialog):
     def __init__(self, parent, session, db, root):
-        super().__init__(parent, session, db, root, "Undo on the Take 5", "Puts back")
-        run = userslots.last_run(db)
+        super().__init__(parent, session, db, root, f"Undo on the {self.LABEL}", "Puts back")
+        run = self.OPS.last_run(db)
         self.go.show()
         if not run:
             self.intro.setText("Nothing to undo."); self.go.setEnabled(False); return
         self.label = run
-        steps = userslots.undo_steps(db, run)
+        steps = self.OPS.undo_steps(db, run)
         self.intro.setText(f"Puts back the programs that <b>{run[18:]}</b> ({run[:10]}) wrote over, from their backups. "
                            "A slot is only put back if it still holds what that run wrote there.")
         self.show_steps(steps)

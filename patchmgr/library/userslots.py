@@ -107,10 +107,11 @@ class Step:
     expect: str | None          # the sound the slot must still hold just before the write (None: don't check)
     why: str = ""
     tick: bool = True
+    synth: str = SYNTH
 
     @property
     def place(self):
-        return place(SYNTH, self.bank, self.prog)
+        return place(self.synth, self.bank, self.prog)
 
 
 def _factory_hashes(db):

@@ -1,3 +1,14 @@
+Library and Targets in the left pane. Version 0.10.1.
+
+Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.
+
+- Under each synth, Patches is now called Library: every patch there is for that synth, once each, by type.
+- A new Targets heading under each synth shows what is on the synth now:
+  - Take 5, Sub 37, Syntakt: Targets › Presets lists only the patches found on the synth at its last read
+    (green rows; Get from synth or a slot read refreshes it).
+  - Deluge: the Deluge card has moved under Targets and is now called SD Card.
+- Sources is unchanged. On disk the folders keep their names (Patches, Sources, Backups).
+
 Syntakt bank H: Send to slot and Sync. Version 0.10.0.
 
 Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.

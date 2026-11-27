@@ -233,3 +233,14 @@ def test_initialize_picked_slots_from_the_panel(lib):
     assert t5_payload(synth.slots[(4, 3)]) != t5_payload(init)        # U5-04 not picked: untouched
     assert userslots.slot_map(db)[(5, 1)]["state"] == "free"
     assert userslots.last_run(db) == res.run                        # Undo the last write… finds it
+
+
+def test_targets_presets_lists_only_what_is_on_the_synth(lib):
+    """Nigel, 27 Nov 2026: <Synth> › Targets › Presets shows only the patches on that synth now."""
+    from patchmgr.library import search
+    root, db, dbp = lib
+    mine = {r["name"]: r for r in db.q("SELECT name, hash FROM patch WHERE synth='take5'")}
+    db.set_slots("take5", [{"bank": 1, "slot": 1, "hash": mine["Acid Bass"]["hash"], "place": "U1-01", "name": "Acid Bass"}])
+    rows = db.q(*search.build("", {"synth": "take5", "onsynth": True}))
+    assert [r["name"] for r in rows] == ["Acid Bass"]
+    assert len(db.q(*search.build("", {"synth": "take5"}))) > 1

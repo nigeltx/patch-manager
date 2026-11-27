@@ -71,6 +71,8 @@ def build(text: str, scope: dict | None = None) -> tuple[str, list]:
         args += [scope.get("synth", ""), scope["pfolder"]]
     elif scope.get("patches"):
         where.append("p.hash IN (SELECT hash FROM patch_file WHERE synth=?)"); args.append(scope.get("synth", ""))
+    if scope.get("onsynth"):                       # Targets › Presets: on that synth now (as of its last read)
+        where.append("p.hash IN (SELECT hash FROM slot_state WHERE synth=?)"); args.append(scope.get("synth", ""))
     if scope.get("crate_id"):
         where.append("p.hash IN (SELECT hash FROM crate_patch WHERE crate_id=?)"); args.append(scope["crate_id"])
     if scope.get("kind"):

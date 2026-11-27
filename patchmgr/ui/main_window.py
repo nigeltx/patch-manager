@@ -398,7 +398,7 @@ class MainWindow(QMainWindow):
             self.tree.addTopLevelItem(it)
             self._patches_branch(it, syn)
             src = None
-            for t in ("factory", "paid", "free", "user", "unsorted", "card", "backup"):
+            for t in ("factory", "paid", "free", "user", "unsorted", "backup"):
                 rows = [r for r in packs if r["synth"] == syn and r["type"] == t]
                 if not rows:
                     continue
@@ -418,6 +418,7 @@ class MainWindow(QMainWindow):
                     if r["pack"]:
                         pi = QTreeWidgetItem([f"{r['pack']}  ({r['n']:,})"])
                         pi.setData(0, Qt.UserRole, {"synth": syn, "type": t, "pack": r["pack"]}); ti.addChild(pi)
+            self._targets_branch(it, syn, packs)
             it.setExpanded(True)
         if not self.db.one("SELECT 1 FROM patch_file LIMIT 1"):
             self._type_section()                     # until Patches has been built, BY TYPE across the library
@@ -450,6 +451,36 @@ class MainWindow(QMainWindow):
         self.tree.blockSignals(False)
         self._reselect(keep)
 
+    def _targets_branch(self, parent, syn, packs):
+        """<Synth> › Targets: what is on the synth now (Nigel, 27 Nov 2026). The Deluge's target is its SD card (the
+        presets read from it); the other synths' is Presets — the library's patches found in the synth's slots at the
+        last read."""
+        tg = QTreeWidgetItem(["Targets"]); tg.setData(0, Qt.UserRole, {"header": "targets"})
+        f = tg.font(0); f.setBold(True); tg.setFont(0, f)
+        if syn == "deluge":
+            rows = [r for r in packs if r["synth"] == syn and r["type"] == "card"]
+            if not rows:
+                return
+            n = self.db.one("SELECT COUNT(DISTINCT po.patch_id) FROM source s JOIN source_file sf ON sf.source_id=s.id "
+                            "JOIN live_origin po ON po.file_id=sf.id WHERE s.synth=? AND s.type='card'", (syn,))
+            ci = QTreeWidgetItem([f"SD Card  ({n:,})"]); ci.setData(0, Qt.UserRole, {"synth": syn, "type": "card"})
+            ci.setToolTip(0, "The presets on the Deluge's SD card, as last read")
+            tg.addChild(ci)
+            for r in sorted(rows, key=lambda r: (r["pack"] or "").lower()):
+                if r["pack"]:
+                    pi = QTreeWidgetItem([f"{r['pack']}  ({r['n']:,})"])
+                    pi.setData(0, Qt.UserRole, {"synth": syn, "type": "card", "pack": r["pack"]}); ci.addChild(pi)
+        else:
+            n = self.db.one("SELECT COUNT(DISTINCT p.id) FROM patch p WHERE p.synth=? AND p.hash IN "
+                            "(SELECT hash FROM slot_state WHERE synth=?)", (syn, syn)) or 0
+            pr = QTreeWidgetItem([f"Presets  ({n:,})"]); pr.setData(0, Qt.UserRole, {"synth": syn, "onsynth": True})
+            pr.setToolTip(0, f"Only the patches that are on the {SYNTH_LABEL[syn]} now, as of its last read")
+            if n:
+                pr.setForeground(0, Qt.darkGreen)
+            tg.addChild(pr)
+        parent.addChild(tg)
+        tg.setExpanded(True)
+
     def _patches_branch(self, parent, syn):
         """<Synth> › Patches › one line per type folder, with how many are on the synth (spec 4.5)."""
         counts = rebuild.counts(self.db, syn)
@@ -457,7 +488,8 @@ class MainWindow(QMainWindow):
             return
         label = SYNTH_LABEL[syn]
         total = sum(n for n, _ in counts.values()); on = sum(o for _, o in counts.values())
-        pi = QTreeWidgetItem([f"Patches  ({total:,}" + (f" · {on} on the {label}" if on else "") + ")"])
+        pi = QTreeWidgetItem([f"Library  ({total:,}" + (f" · {on} on the {label}" if on else "") + ")"])
+        pi.setToolTip(0, f"Every patch there is for the {label}, once each, by type (the Patches folder)")
         pi.setData(0, Qt.UserRole, {"synth": syn, "patches": True})
         f = pi.font(0); f.setBold(True); pi.setFont(0, f)
         parent.addChild(pi)
@@ -569,7 +601,7 @@ class MainWindow(QMainWindow):
             return
         text = self.search.text()
         scope = {k: v for k, v in self.scope.items() if k in ("synth", "type", "pack", "crate_id", "kind", "ptype",
-                                                              "pfolder", "patches")}
+                                                              "pfolder", "patches", "onsynth")}
         if self.scope.get("query"):
             text = (self.scope["query"] + " " + text).strip()
         try:

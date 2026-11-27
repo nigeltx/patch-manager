@@ -241,6 +241,11 @@ class MainWindow(QMainWindow):
             layout.load_types(self.db, root)
             from ..library import duplicates
             duplicates.load(self.db, root)
+            from ..library import userslots as uslots
+            if layout.is_new_layout(root, "take5") and uslots.keep_init_as_patch(root):
+                # the Take 5's init program (Basic Program) is now a patch too: index it and put it in Patches
+                Scanner(self.db.path, [(root, "library")]).run()
+                QTimer.singleShot(500, lambda: self.open_rebuild(["take5"], quiet=True))
             if not self.db.setting("reorganize_offered") and not layout.reorganize_plan(root).empty:
                 self.db.set_setting("reorganize_offered", "1")
                 if QMessageBox.question(

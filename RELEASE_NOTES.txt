@@ -1,3 +1,12 @@
+The Take 5's Basic Program as a patch. Version 0.9.1.
+
+Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.
+
+- The init program you made for Clear user slots (Basic Program) is now a patch too: it is kept in
+  Take 5 › Sources › Factory › Init program and goes into Patches, so you can find it, audition it and send it
+  to a slot as a starting point. This happens once, the first time the app starts.
+- A slot holding it still counts as free, and Fill user slots never sends it.
+
 Send to slot and Sync for the Take 5. Version 0.9.0.
 
 Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.

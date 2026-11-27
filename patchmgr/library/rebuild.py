@@ -75,7 +75,8 @@ class Plan:
 
 
 def wanted(db, synth: str) -> list[Want]:
-    """Every sound that has a source in Factory, Paid, Free or User (not blank), with its name and primary type."""
+    """Every sound that has a source in Factory, Paid, Free or User, with its name and primary type. A blank init sound
+    is included only when it has a source (the Take 5's Basic Program, kept in Sources › Factory as a starting point)."""
     ph = ",".join("?" * len(LIB_TYPES))
     rows = db.q(
         "SELECT p.hash, p.name, p.data, COALESCE(tu.types, tg.types, ',Unknown,') types, "
@@ -84,7 +85,7 @@ def wanted(db, synth: str) -> list[Want]:
         + " ".join(f"WHEN '{t}' THEN {i}" for t, i in PRIORITY.items()) +
         " END, sf.rel, po.idx LIMIT 1) oname "
         "FROM patch p LEFT JOIN type_guess tg ON tg.hash=p.hash LEFT JOIN type_user tu ON tu.hash=p.hash "
-        "WHERE p.synth=? AND p.kind='sound' AND p.blank=0 AND EXISTS(SELECT 1 FROM live_origin po JOIN source_file sf "
+        "WHERE p.synth=? AND p.kind='sound' AND EXISTS(SELECT 1 FROM live_origin po JOIN source_file sf "
         f"ON sf.id=po.file_id JOIN source s ON s.id=sf.source_id WHERE po.patch_id=p.id AND s.type IN ({ph}))",
         (*LIB_TYPES, synth, *LIB_TYPES))
     out = []

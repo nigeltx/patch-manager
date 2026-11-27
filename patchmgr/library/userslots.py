@@ -20,6 +20,7 @@ from .rebuild import folder_name, single_file
 SYNTH = "take5"
 USER_BANKS = range(1, 17)
 INIT_FILE = "Take 5 init.syx"
+INIT_SOURCE = "Init program"          # Sources › Factory › Init program › <name>.syx — the init as a patch you can use
 INIT_KEY = "take5_init_hash"
 
 
@@ -45,6 +46,32 @@ def load_init(db, root):
     return data, h, name
 
 
+def init_source_path(root, name):
+    from .layout import sources_dir
+    return os.path.join(sources_dir(root, SYNTH, "Factory"), INIT_SOURCE, f"{factory.safe(name)}.syx")
+
+
+def keep_init_as_patch(root) -> str | None:
+    """Put the init program in Sources › Factory › Init program, so it is listed as a patch — to audition, start a sound
+    from, or send to a slot. It stays blank too: a slot holding it still counts as free. Returns the file written,
+    or None if it was already there (or there is no init yet)."""
+    p = init_path(root) if root else None
+    if not p or not os.path.isfile(p):
+        return None
+    with open(p, "rb") as f:
+        data = f.read()
+    _h, name = hash_of(data)
+    dst = init_source_path(root, name)
+    if os.path.exists(dst):
+        return None
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    tmp = dst + ".tmp"
+    with open(tmp, "wb") as f:
+        f.write(data)
+    os.replace(tmp, dst)
+    return dst
+
+
 def save_init(db, root, msg: bytes):
     """Keep the init program you made on the panel, and mark its sound blank: never one of yours, never in Patches."""
     data = single_file(SYNTH, msg)
@@ -54,6 +81,7 @@ def save_init(db, root, msg: bytes):
         f.write(data)
     os.replace(tmp, init_path(root))
     mark_blank(db, data)
+    keep_init_as_patch(root)
     return hash_of(data)
 
 

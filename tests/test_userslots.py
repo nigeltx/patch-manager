@@ -183,3 +183,23 @@ def test_sync_sends_the_crate_into_free_slots_only(lib):
     assert res.done == 1
     assert userslots.sync_plan(db)[0] == []                         # in step: nothing to send again
     assert t5_payload(synth.slots[(0, 1)]) == t5_payload(bytes(mine["Other Thing"]["data"]))   # not written over
+
+
+def test_the_init_program_is_a_patch_too(lib):
+    """Nigel, 27 Nov 2026: the Basic Program should be available as a patch, while a slot holding it stays free."""
+    from patchmgr.library import rebuild
+    root, db, dbp = lib
+    synth = WritableTake5()
+    t5 = Take5(synth)
+    synth.slots[(15, 15)] = t5_program(15, 15, "Basic Program")
+    ih, _ = userslots.save_init(db, str(root), t5.read_program(16, 16))
+    src = userslots.init_source_path(str(root), "Basic Program")
+    assert os.path.isfile(src) and "Factory" in src
+    assert userslots.keep_init_as_patch(str(root)) is None              # only once
+    Scanner(dbp, [(str(root), "library")]).run()
+    db = DB(dbp)
+    assert ih in factory.library_hashes(db, "take5")
+    assert ih in {w.hash for w in rebuild.wanted(db, "take5")}           # it goes into Patches
+    assert ih not in {p["hash"] for p in userslots.your_patches(db)}     # but Fill never sends it
+    db.set_slots("take5", [{"bank": 2, "slot": 2, "hash": ih, "place": "U2-02", "name": "Basic Program"}])
+    assert userslots.slot_map(db)[(2, 2)]["state"] == "free"              # a slot holding it is still free

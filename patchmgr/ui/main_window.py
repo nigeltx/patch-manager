@@ -175,6 +175,10 @@ class MainWindow(QMainWindow):
         self.banner.hide(); self.banner_synth = None; self.banner_skip = set()
         lv.addWidget(self.banner); lv.addWidget(self.table)
         self.center = QStackedWidget(); self.center.addWidget(listw); self.center.addWidget(pw)
+        from .bankview import BankView
+        self.bankview = BankView(db)                 # Targets › Presets laid out as the synth's banks (index 2)
+        self.bankview.picked.connect(self._bank_picked)
+        self.center.addWidget(self.bankview)
         self.bg_thread = None
 
         # ---------------- details
@@ -574,6 +578,17 @@ class MainWindow(QMainWindow):
             self.center.setCurrentIndex(1); self._fill_problems(); return
         self.center.setCurrentIndex(0)
         self.refresh()
+        if d.get("onsynth"):
+            self.bankview.show_synth(d["synth"], SYNTH_LABEL[d["synth"]], {r["hash"] for r in self.model.rows})
+            self.center.setCurrentIndex(2)
+
+    def _bank_picked(self, h):
+        """A slot in the bank view was clicked: select that patch, as if picked in the list (details, audition)."""
+        for i, r in enumerate(self.model.rows):
+            if r["hash"] == h:
+                self.table.clearSelection()
+                self.table.selectRow(self.proxy.mapFromSource(self.model.index(i, 0)).row())
+                return
 
     def _tree_menu(self, pos):
         it = self.tree.itemAt(pos)
@@ -620,6 +635,9 @@ class MainWindow(QMainWindow):
                 if r["hash"] in sel:
                     self.table.selectRow(self.proxy.mapFromSource(self.model.index(i, 0)).row()); break
         self.status_lbl.setText(f"{len(rows):,} patch{'' if len(rows) == 1 else 'es'} shown")
+        if self.center.currentIndex() == 2 and self.scope.get("onsynth"):
+            self.bankview.library = {r["hash"] for r in rows}
+            self.bankview.fill()
 
     def selected_rows(self):
         out = []

@@ -244,3 +244,14 @@ def test_targets_presets_lists_only_what_is_on_the_synth(lib):
     rows = db.q(*search.build("", {"synth": "take5", "onsynth": True}))
     assert [r["name"] for r in rows] == ["Acid Bass"]
     assert len(db.q(*search.build("", {"synth": "take5"}))) > 1
+
+
+def test_bank_view_layouts_match_the_synths():
+    from patchmgr.ui.bankview import layout_for
+    rows, cols, cells = layout_for("take5")
+    assert rows[0] == "U1" and rows[16] == "F1" and len(rows) == 32 and len(cols) == 16 and len(cells) == 512
+    assert (16, 0, 17, 1) in cells                                  # F1-01 is bank 17, program 1
+    rows, cols, cells = layout_for("sub37")
+    assert rows[9] == "Bank 10" and len(cells) == 256
+    rows, cols, cells = layout_for("syntakt", 8)
+    assert rows[0] == "H001" and rows[7] == "H113" and len(cells) == 128 and cells[-1] == (7, 15, 8, 128)

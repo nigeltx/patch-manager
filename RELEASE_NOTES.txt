@@ -1,3 +1,15 @@
+Presets laid out like the synth. Version 0.10.2.
+
+Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.
+
+- Clicking Targets › Presets now shows the synth's slots as a grid, banks down and programs across, the way they
+  are on the synth: the Take 5 as U1–U16 then F1–F16, the Sub 37 as banks 1–16, and the Syntakt one sound bank
+  at a time (pick A–H above the grid; 128 slots as 8 rows of 16).
+- Green: a patch in your library. Amber: a sound in no source yet (Get from synth keeps it). Grey: a factory bank.
+  Blank: empty or not read yet. Hover a slot for its full name.
+- Click a green slot to select that patch — details and audition work as they do from the list.
+- The grid shows the synth as of its last read; the title says when that was.
+
 Library and Targets in the left pane. Version 0.10.1.
 
 Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.

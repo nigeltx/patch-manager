@@ -1,3 +1,13 @@
+Fix: the app closing after a write. Version 0.9.4.
+
+Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.
+
+- The app no longer closes when Initialize slots, Clear, Fill, Send to slot or Sync finishes. The end of each
+  run was being handled on the reading thread instead of the window's, which could crash the app.
+- The same fault in the quiet read that refreshes the green rows after a synth connects is fixed too — the
+  likely cause of the app closing a few seconds after it opened.
+- Nothing written to the Take 5 was affected: every slot was read back and checked before the crash.
+
 Basic Program is a factory patch. Version 0.9.3.
 
 Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.

@@ -217,7 +217,7 @@ class MainWindow(QMainWindow):
         self.session.preflight_done.connect(self._preflight)
         self.session.loaded.connect(self._loaded)
         self.session.verified.connect(self._verified)
-        self.session.message.connect(lambda m: self.status_lbl.setText(m))
+        self.session.message.connect(self.status_lbl.setText)
 
         self.fill_tree()
         self.refresh()
@@ -891,13 +891,23 @@ class MainWindow(QMainWindow):
         self.bg_worker = ReadWorker("refresh", key, self.session, self.db.path, self.db.setting("library_root"))
         self.bg_worker.moveToThread(self.bg_thread)
         self.bg_thread.started.connect(self.bg_worker.run)
-        label = SYNTH_LABEL[key]
-        self.bg_worker.progress.connect(lambda d, t, txt: self.status_lbl.setText(
-            f"Reading what is on the {label}: {d} of {t}" if t else f"Reading the {label}…"))
-        self.bg_worker.done.connect(lambda res: self._bg_end(f"Green rows updated — read {len(res['reads'])} slots on "
-                                                            f"the {label}"))
-        self.bg_worker.failed.connect(lambda msg: self._bg_end(f"Could not read what is on the {label}: {msg}"))
+        # Bound methods, not lambdas: Qt then runs them in the GUI thread. Lambdas ran in the reading thread and
+        # touched the window from there, which can crash the app (27 Nov 2026).
+        self.bg_label = SYNTH_LABEL[key]
+        self.bg_worker.progress.connect(self._bg_progress)
+        self.bg_worker.done.connect(self._bg_done)
+        self.bg_worker.failed.connect(self._bg_failed)
         self.bg_thread.start()
+
+    def _bg_progress(self, d, t, txt):
+        self.status_lbl.setText(f"Reading what is on the {self.bg_label}: {d} of {t}" if t
+                                else f"Reading the {self.bg_label}…")
+
+    def _bg_done(self, res):
+        self._bg_end(f"Green rows updated — read {len(res['reads'])} slots on the {self.bg_label}")
+
+    def _bg_failed(self, msg):
+        self._bg_end(f"Could not read what is on the {self.bg_label}: {msg}")
 
     def _bg_end(self, text):
         if self.bg_thread:

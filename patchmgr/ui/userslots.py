@@ -114,7 +114,10 @@ class SlotsDialog(QDialog):
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.progress.connect(self._progress)
-        self.worker.done.connect(lambda r: self._finish(on_done, r))
+        # a bound method, not a lambda: Qt then runs it in the dialog's (GUI) thread. A lambda ran in the worker's
+        # thread, so the dialog was updated from the wrong thread and the app crashed (27 Nov 2026).
+        self._on_done = on_done
+        self.worker.done.connect(self._done)
         self.worker.failed.connect(self._failed)
         self.thread.start()
 
@@ -127,9 +130,9 @@ class SlotsDialog(QDialog):
             self.thread.quit(); self.thread.wait(2000)
         self.thread = self.worker = None
 
-    def _finish(self, on_done, r):
+    def _done(self, r):
         self._stop_thread()
-        on_done(r)
+        self._on_done(r)
 
     def _failed(self, msg):
         self._stop_thread()

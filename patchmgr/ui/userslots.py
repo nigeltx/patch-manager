@@ -325,3 +325,169 @@ class UndoDialog(SlotsDialog):
     def write(self):
         if self.ready():
             super().write()
+
+
+# ---------------------------------------------------------------- Send to slot (spec 5.2, 7.1)
+STATE_COLOUR = {"free": "#d8f0e4", "yours": "#e5e7eb", "unknown": "#fde8c8"}
+
+
+class SendDialog(SlotsDialog):
+    """Pick the first user slot on a 16 × 16 grid; the chosen patches go to it and the slots after it."""
+
+    def __init__(self, parent, session, db, root, patches):
+        super().__init__(parent, session, db, root, "Send to a Take 5 slot", "Now holds")
+        self.patches = patches
+        self.resize(900, 780)
+        n = len(patches)
+        self.intro.setText(
+            f"Sends <b>{n} patch{'es' if n != 1 else ''}</b> to the Take 5's user slots"
+            + (" — the first to the slot you pick, the rest to the slots after it" if n > 1 else "")
+            + ". Pick a slot below: green slots are free (the init program), grey ones hold a sound in your library, "
+              "amber ones hold a sound in no source — it is kept in Sources › User before it is written over. "
+              "Factory banks F1–F16 are never written. Each slot is read first, kept in Backups, and checked after.")
+        self.grid = QTableWidget(16, 16)
+        self.grid.setHorizontalHeaderLabels([f"{p:02d}" for p in range(1, 17)])
+        self.grid.setVerticalHeaderLabels([f"U{b}" for b in range(1, 17)])
+        self.grid.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.grid.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.grid.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.grid.verticalHeader().setDefaultSectionSize(20)
+        self.grid.setMinimumHeight(16 * 20 + 30)
+        self.grid.setStyleSheet("QTableWidget { font-size: 8pt; }")
+        self.grid.cellClicked.connect(self.pick)
+        self.top.addWidget(self.grid)
+        row = QHBoxLayout()
+        self.read_all_btn = QPushButton("Read U1–U16 (about 40 s)")
+        self.read_all_btn.setToolTip("Refresh the grid from the Take 5; otherwise it shows the last read")
+        self.read_all_btn.clicked.connect(self.read_all)
+        row.addWidget(self.read_all_btn); row.addStretch(1)
+        self.top.addLayout(row)
+        self.go.show(); self.go.setEnabled(False)
+        self.paint_grid()
+        first = next((k for k in userslots.slots() if userslots.slot_map(db).get(k, {}).get("state") == "free"), None)
+        if first:
+            self.grid.setCurrentCell(first[0] - 1, first[1] - 1)
+            self.plan(first)
+        self.status.setText("Click a slot to choose where the first patch goes. Nothing has been written yet.")
+
+    def paint_grid(self):
+        sm = userslots.slot_map(self.db)
+        for b in range(1, 17):
+            for p in range(1, 17):
+                v = sm.get((b, p))
+                it = QTableWidgetItem(v["name"] if v else "")
+                it.setToolTip(f"U{b}-{p:02d}: " + (f"{v['name']} — {v['state']}" if v else "not read yet"))
+                it.setBackground(QColor(STATE_COLOUR.get(v["state"], "#ffffff") if v else "#ffffff"))
+                self.grid.setItem(b - 1, p - 1, it)
+
+    def pick(self, r, c):
+        """Read the chosen slot on the spot, so the name shown is what is really there (spec 5.2)."""
+        b, p = r + 1, c + 1
+        if self.ready():
+            m = self.drv.read_program(b, p)
+            if m is None:
+                self.status.setText(f"The Take 5 did not send U{b}-{p:02d}."); return
+            h, name = userslots.hash_of(m)
+            self.db.set_slots("take5", [{"bank": b, "slot": p, "place": f"U{b}-{p:02d}", "name": name, "hash": h}])
+            self.db.con.commit()
+            self.paint_grid()
+        self.plan((b, p))
+
+    def plan(self, start):
+        steps, left = userslots.send_plan(self.db, self.patches, start)
+        self.show_steps(steps)
+        self.summary.setText(f"From <b>U{start[0]}-{start[1]:02d}</b>: {len(steps)} slot{'s' if len(steps) != 1 else ''}"
+                             + (f". {len(left)} will not fit before U16-16." if left else "."))
+
+    def read_all(self):
+        if not self.ready():
+            return
+        drv = self.drv
+        self.start(lambda prog, canc: drv.read_slots(userslots.USER_BANKS, prog, canc), self._after_read)
+
+    def _after_read(self, reads):
+        self.db.set_slots("take5", [{"bank": r.bank, "slot": r.slot, "place": r.place, "name": r.name, "hash": r.hash}
+                                    for r in reads])
+        self.db.con.commit()
+        self.paint_grid()
+        r = self.grid.currentRow(); c = self.grid.currentColumn()
+        if r >= 0:
+            self.plan((r + 1, c + 1))
+        self.status.setText(f"Read {len(reads)} slots. Nothing has been written yet.")
+
+    def go_text(self, n):
+        return f"Send {n} patch{'es' if n != 1 else ''}"
+
+    def run_label(self):
+        return "Send to slot"
+
+    def write(self):
+        if self.ready():
+            super().write()
+
+    def written(self, res):
+        super().written(res)
+        if res.kept:
+            self.status.setText(self.status.text() + f"<br>{len(res.kept)} sound(s) that were in no source are now in "
+                                "Sources › User: " + ", ".join(res.kept[:6]))
+        self.paint_grid()
+
+
+# ---------------------------------------------------------------- Sync (spec 7.8)
+class SyncDialog(SlotsDialog):
+    """Get first, then send the "For Take 5" patches that are not on it into free slots."""
+
+    def __init__(self, parent, session, db, root):
+        super().__init__(parent, session, db, root, "Sync with the Take 5", "Into")
+        self.intro.setText(
+            f"Brings the Take 5 and your <b>{userslots.FOR_CRATE}</b> crate together. <b>1 · Get:</b> every user slot is "
+            "read; any sound in no source is kept in Sources › User, so everything on the Take 5 is in your library. "
+            f"<b>2 · Send:</b> the patches in <i>{userslots.FOR_CRATE}</i> that are not on the Take 5 yet go into free "
+            "slots (the init program). Nothing is written over a sound, and nothing is removed from the Take 5.")
+        row = QHBoxLayout()
+        self.read_btn = QPushButton("1 · Read U1–U16 (about 40 s)"); self.read_btn.clicked.connect(self.read_user)
+        row.addWidget(self.read_btn); row.addStretch(1)
+        self.top.addLayout(row)
+        self.go.show(); self.go.setEnabled(False)
+        n = len(userslots.crate_patches(db, userslots.for_crate(db)))
+        self.summary.setText(f"<i>{userslots.FOR_CRATE}</i> holds {n} Take 5 patch{'es' if n != 1 else ''}. "
+                             "Add patches to it from the list (right-click › Add to crate)." if not n else
+                             f"<i>{userslots.FOR_CRATE}</i> holds {n} Take 5 patch{'es' if n != 1 else ''}. Read the "
+                             "Take 5 to see which still need sending.")
+
+    def read_user(self):
+        if not self.ready():
+            return
+        drv = self.drv
+        self.status.setText("Reading U1–U16…")
+        self.start(lambda prog, canc: drv.read_slots(userslots.USER_BANKS, prog, canc), self.after_read)
+
+    def after_read(self, reads):
+        if len(reads) < 256:
+            self.status.setText(f"Read stopped after {len(reads)} slots — nothing was written."); return
+        folder = factory.backup_folder(self.root, "take5", "Before sync")
+        factory.write_backup(folder, "take5", reads)
+        items = [(r.hash, r.place, r.name, r.data, r.blank) for r in reads]
+        kept = factory.keep_in_sources(self.db, self.root, "take5", items, set())
+        Scanner(self.db.path, [(self.root, "library")]).run()
+        self.db.set_slots("take5", [{"bank": r.bank, "slot": r.slot, "place": r.place, "name": r.name, "hash": r.hash}
+                                    for r in reads])
+        self.db.con.commit()
+        steps, left, there = userslots.sync_plan(self.db)
+        self.show_steps(steps)
+        bits = [f"<b>Get:</b> " + (f"{kept['n_user']} new sound{'s' if kept['n_user'] != 1 else ''} kept in Sources › "
+                                    "User." if kept["n_user"] else "nothing new on the Take 5.")]
+        bits.append(f"<b>Send:</b> {len(steps)} to send, {there} already on the Take 5"
+                    + (f", <span style='color:#b45309'>{len(left)} with no free slot left</span>" if left else "") + ".")
+        self.summary.setText(" ".join(bits))
+        self.status.setText("Nothing has been written yet." if steps else "The Take 5 is in step with the crate.")
+
+    def go_text(self, n):
+        return f"Send {n} patch{'es' if n != 1 else ''}"
+
+    def run_label(self):
+        return "Sync"
+
+    def write(self):
+        if self.ready():
+            super().write()

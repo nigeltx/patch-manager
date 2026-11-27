@@ -1,3 +1,20 @@
+Send to slot and Sync for the Take 5. Version 0.9.0.
+
+Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.
+
+- Send to a Take 5 slot: select one or more Take 5 patches, right-click › Send to a Take 5 slot… (or
+  Synths ▾ › Take 5 › Send selected to a slot…). A 16 × 16 grid shows the user slots from the last read —
+  green free (the init program), grey a sound in your library, amber a sound in no source. Click a slot: it is
+  read on the spot, and the first patch goes there, the rest to the slots after it.
+- Every slot is read first and kept in Take 5 › Backups. A sound in no source is kept in Sources › User before
+  it is written over, so nothing made on the panel is lost. Each write is read back and compared; a bad
+  compare puts the old program straight back and stops.
+- Sync…: reads U1–U16, keeps any new sound in Sources › User, then sends the patches in the "For Take 5" crate
+  that are not on the Take 5 yet into free slots. It never writes over a sound and never removes one.
+  Right-click › Add to 'For Take 5' fills the crate.
+- Undo the last write… (Take 5 menu) puts back what the last Send, Sync, Clear or Fill wrote over.
+- Factory banks F1–F16 are never written.
+
 Updates itself. Version 0.8.1.
 
 Download the PatchManager-Setup .exe below and run it; it updates the installed app in place.

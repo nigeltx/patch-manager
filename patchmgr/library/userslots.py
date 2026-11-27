@@ -1,5 +1,5 @@
-"""The Take 5's user slots (spec 7.9, 7.10): clear them to an init program, then fill them with your own patches,
-packed from U1-01. Every write is one slot at a time: read the slot, check it still holds what the plan expects,
+"""The Take 5's user slots (spec 5.2, 7.1, 7.8–7.10): clear them to an init program, fill them with your own patches
+packed from U1-01, send chosen patches to a slot (Send to slot), and Sync with the "For Take 5" crate. Every write is one slot at a time: read the slot, check it still holds what the plan expects,
 write, read back, compare; a failed compare puts the old program straight back and stops the run.
 
 User banks U1–U16 are never locked, even when they hold copies of factory sounds. Factory banks F1–F16 are never
@@ -11,7 +11,7 @@ import os
 import time
 from dataclasses import dataclass, field
 
-from . import ptypes
+from . import factory, ptypes
 from .factory import SlotRead, backup_folder, sound_file_name
 from .formats import place, read_take5
 from .layout import app_dir
@@ -152,6 +152,77 @@ def fill_plan(db, init_hash: str) -> tuple[list[Step], list]:
     return steps, todo[len(steps):]
 
 
+# ---------------------------------------------------------------- Send to slot and Sync (spec 5.2, 7.8)
+FOR_CRATE = "For Take 5"
+
+
+def slots():
+    """Every user slot in order: (bank, prog)."""
+    return [(b, p) for b in USER_BANKS for p in range(1, 17)]
+
+
+def slot_map(db) -> dict:
+    """(bank, prog) → {name, hash, state} from the last read. state: free (the init program or a blank), yours (a
+    sound with a source), unknown (in no source yet — Send keeps it in Sources › User before writing over it)."""
+    have = factory.library_hashes(db, SYNTH)
+    blank = factory.blank_hashes(db, SYNTH)
+    out = {}
+    for r in db.q("SELECT bank, slot, name, hash FROM slot_state WHERE synth=? AND bank BETWEEN 1 AND 16", (SYNTH,)):
+        state = "free" if r["hash"] in blank else ("yours" if r["hash"] in have else "unknown")
+        out[(r["bank"], r["slot"])] = {"name": r["name"], "hash": r["hash"], "state": state}
+    return out
+
+
+def send_plan(db, patches: list, start: tuple[int, int]) -> tuple[list[Step], list]:
+    """Patches to consecutive user slots from start (spec 7.1). Each step expects the slot to still hold what the last
+    read saw there. -> (steps, patches that did not fit)."""
+    order = slots()
+    sm = slot_map(db)
+    i = order.index(start)
+    steps = []
+    for k, p in enumerate(patches):
+        if i + k >= len(order):
+            return steps, patches[k:]
+        b, n = order[i + k]
+        now = sm.get((b, n))
+        if not now:
+            why = "not read yet (read and kept in Backups first)"
+        elif now["state"] == "free":
+            why = "free"
+        elif now["state"] == "unknown":
+            why = f"over '{now['name']}' (kept in Sources › User first)"
+        else:
+            why = f"over '{now['name']}' (it is in your library)"
+        steps.append(Step(b, n, bytes(p["data"]), p["hash"], p["name"], now["hash"] if now else None, why))
+    return steps, []
+
+
+def for_crate(db) -> int:
+    """The id of the "For Take 5" crate, made if it isn't there."""
+    cid = db.one("SELECT id FROM crate WHERE name=?", (FOR_CRATE,))
+    return cid if cid else db.new_crate(FOR_CRATE)
+
+
+def crate_patches(db, cid) -> list:
+    return [dict(r) for r in db.q(
+        "SELECT p.hash, p.name, p.data FROM crate_patch cp JOIN patch p ON p.hash=cp.hash "
+        "WHERE cp.crate_id=? AND p.synth=? AND p.kind='sound' ORDER BY cp.pos, p.name", (cid, SYNTH))]
+
+
+def sync_plan(db) -> tuple[list[Step], list, int]:
+    """Sync (spec 7.8): the patches in "For Take 5" that are not on the Take 5 yet, each into the next free user slot
+    (holding the init program or a blank). Nothing is written over a sound. -> (steps, did not fit, already there)."""
+    sm = slot_map(db)
+    on = {v["hash"] for v in sm.values()}
+    want = crate_patches(db, for_crate(db))
+    todo = [p for p in want if p["hash"] not in on]
+    free = [k for k in slots() if sm.get(k, {}).get("state") == "free"]
+    steps = []
+    for (b, n), p in zip(free, todo):
+        steps.append(Step(b, n, bytes(p["data"]), p["hash"], p["name"], sm[(b, n)]["hash"], "free"))
+    return steps, todo[len(steps):], len(want) - len(todo)
+
+
 # ---------------------------------------------------------------- running a plan
 @dataclass
 class RunResult:
@@ -161,6 +232,7 @@ class RunResult:
     stopped: bool = False
     backup: str = ""
     run: str = ""
+    kept: list = field(default_factory=list)        # sounds kept in Sources › User before they were written over
 
 
 def run(driver, db, root, steps: list[Step], label: str, progress=None, cancelled=None) -> RunResult:
@@ -170,6 +242,8 @@ def run(driver, db, root, steps: list[Step], label: str, progress=None, cancelle
     res.backup = backup_folder(root, SYNTH, label)
     os.makedirs(res.backup, exist_ok=True)
     todo = [s for s in steps if s.tick]
+    keep_known = (factory.library_hashes(db, SYNTH) | factory.blank_hashes(db, SYNTH)
+                  | factory.factory_slot_hashes(db, SYNTH))
     for i, st in enumerate(todo):
         if cancelled and cancelled():
             res.stopped = True
@@ -187,6 +261,11 @@ def run(driver, db, root, steps: list[Step], label: str, progress=None, cancelle
         bpath = os.path.join(res.backup, sound_file_name(SYNTH, st.place, bname))
         with open(bpath, "wb") as f:
             f.write(before)
+        if bh not in keep_known:            # in no source: keep it in Sources › User before it leaves the synth
+            kept = factory.keep_in_sources(db, root, SYNTH, [(bh, st.place, bname, before, False)], set())
+            if kept.get("n_user"):
+                res.kept.append(f"{st.place} {bname}")
+            keep_known.add(bh)
         ok, back = driver.write_program(st.data, st.bank, st.prog)
         status = "ok"
         if not ok:

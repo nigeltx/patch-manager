@@ -114,3 +114,72 @@ def test_a_slot_that_changed_is_skipped_and_a_bad_write_stops(lib):
     assert res.done == 1 and "U1-03" in res.failed                    # U1-02 done, U1-03 failed and stopped
     assert synth.writes[-2:] == [(1, 3), (1, 3)]                      # the write, then the old program put back
     assert t5_payload(synth.slots[(0, 1)]) == t5_payload(init)          # U1-02 cleared
+
+
+def _cleared(lib):
+    """A Take 5 whose user slots hold the init program, read into slot_state."""
+    root, db, dbp = lib
+    synth = WritableTake5()
+    t5 = Take5(synth)
+    synth.slots[(15, 15)] = t5_program(15, 15, "Basic Program")
+    userslots.save_init(db, str(root), t5.read_program(16, 16))
+    init = userslots.load_init(db, str(root))[0]
+    for b in range(16):
+        for p in range(16):
+            synth.slots[(b, p)] = program_to(init, b + 1, p + 1)
+    reads = t5.read_slots(banks=userslots.USER_BANKS)
+    db.set_slots("take5", [{"bank": r.bank, "slot": r.slot, "hash": r.hash, "place": r.place, "name": r.name}
+                           for r in reads])
+    db.con.commit()
+    return root, db, synth, t5
+
+
+def _mine(db):
+    return {p["name"]: p for p in userslots.your_patches(db)}
+
+
+def test_send_to_slot_from_a_chosen_slot(lib):
+    root, db, synth, t5 = _cleared(lib)
+    mine = _mine(db)
+    sm = userslots.slot_map(db)
+    assert all(v["state"] == "free" for v in sm.values()) and len(sm) == 256
+    # something made on the panel in U3-05, not in any source yet
+    synth.slots[(2, 4)] = t5_program(2, 4, "Panel Sound")
+    h, _ = userslots.hash_of(t5.read_program(3, 5))
+    db.set_slots("take5", [{"bank": 3, "slot": 5, "hash": h, "place": "U3-05", "name": "Panel Sound"}])
+    assert userslots.slot_map(db)[(3, 5)]["state"] == "unknown"
+    steps, left = userslots.send_plan(db, [mine["Acid Bass"], mine["Zed Pad"]], (3, 5))
+    assert [s.place for s in steps] == ["U3-05", "U3-06"] and not left
+    assert "kept in Sources › User first" in steps[0].why and steps[1].why == "free"
+    res = userslots.run(t5, db, str(root), steps, "Send to slot")
+    assert res.done == 2 and res.kept == ["U3-05 Panel Sound"]
+    kept = list((root / "Take 5" / "Sources" / "User").rglob("*Panel Sound*"))
+    assert kept, "the panel sound was kept in Sources › User before it was written over"
+    assert t5_payload(synth.slots[(2, 4)]) == t5_payload(bytes(mine["Acid Bass"]["data"]))
+    # near the end: what doesn't fit is reported
+    steps, left = userslots.send_plan(db, [mine["Acid Bass"], mine["Zed Pad"]], (16, 16))
+    assert [s.place for s in steps] == ["U16-16"] and [p["name"] for p in left] == ["Zed Pad"]
+    # undo puts the panel sound back
+    undo = userslots.undo_steps(db, res.run)
+    userslots.run(t5, db, str(root), undo, "Undo Send to slot")
+    assert t5_payload(synth.slots[(2, 4)]) == t5_payload(t5_program(2, 4, "Panel Sound"))
+
+
+def test_sync_sends_the_crate_into_free_slots_only(lib):
+    root, db, synth, t5 = _cleared(lib)
+    mine = _mine(db)
+    # U1-01 already holds Acid Bass; U1-02 holds a sound of the user's that is not in the crate
+    synth.slots[(0, 0)] = program_to(bytes(mine["Acid Bass"]["data"]), 1, 1)
+    synth.slots[(0, 1)] = program_to(bytes(mine["Other Thing"]["data"]), 1, 2)
+    reads = t5.read_slots(banks=[1])
+    db.set_slots("take5", [{"bank": r.bank, "slot": r.slot, "hash": r.hash, "place": r.place, "name": r.name}
+                           for r in reads])
+    cid = userslots.for_crate(db)
+    assert userslots.for_crate(db) == cid                           # made once
+    db.crate_add(cid, [mine["Acid Bass"]["hash"], mine["Zed Pad"]["hash"]])
+    steps, left, there = userslots.sync_plan(db)
+    assert [(s.place, s.name) for s in steps] == [("U1-03", "Zed Pad")] and there == 1 and not left
+    res = userslots.run(t5, db, str(root), steps, "Sync")
+    assert res.done == 1
+    assert userslots.sync_plan(db)[0] == []                         # in step: nothing to send again
+    assert t5_payload(synth.slots[(0, 1)]) == t5_payload(bytes(mine["Other Thing"]["data"]))   # not written over

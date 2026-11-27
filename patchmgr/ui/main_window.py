@@ -776,8 +776,14 @@ class MainWindow(QMainWindow):
                 a.setEnabled(ok and (mode != "refresh" or key != "sub37"))
             if key == "take5":
                 sub.addSeparator()
+                t5 = [r for r in self.selected_rows() if r["synth"] == "take5" and r["kind"] == "sound"]
+                a = sub.addAction(f"Send {len(t5)} selected to a slot…" if t5 else "Send to a slot… (select Take 5 patches)",
+                                  lambda: self.open_send_slot())
+                a.setEnabled(ok and bool(t5))
+                sub.addAction("Sync…", lambda: self.open_user_slots("SyncDialog")).setEnabled(ok)
+                sub.addSeparator()
                 for text, cls in (("Clear user slots…", "ClearDialog"), ("Fill user slots…", "FillDialog"),
-                                  ("Undo the last clear or fill…", "UndoDialog")):
+                                  ("Undo the last write…", "UndoDialog")):
                     a = sub.addAction(text, lambda c=cls: self.open_user_slots(c))
                     a.setEnabled(ok or cls == "FillDialog")
             sub.addSeparator()
@@ -786,8 +792,18 @@ class MainWindow(QMainWindow):
                                  else "Not initialized yet")
             info.setEnabled(False)
 
-    def open_user_slots(self, cls):
-        """Take 5 user slots (spec 7.9, 7.10)."""
+    def open_send_slot(self, rows=None):
+        """Send to slot (spec 5.2, 7.1) for the selected Take 5 patches."""
+        rows = [r for r in (rows or self.selected_rows()) if r["synth"] == "take5" and r["kind"] == "sound"]
+        if not rows:
+            QMessageBox.information(self, APP, "Select one or more Take 5 patches in the list first.")
+            return
+        patches = [{"hash": r["hash"], "name": r["name"],
+                    "data": self.db.one("SELECT data FROM patch WHERE hash=?", (r["hash"],))} for r in rows]
+        self.open_user_slots("SendDialog", patches)
+
+    def open_user_slots(self, cls, patches=None):
+        """Take 5 user slots (spec 5.2, 7.1, 7.8–7.10)."""
         from . import userslots as us
         root = self._root_or_warn()
         if not root:
@@ -796,9 +812,10 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, APP, "Reorganize the library first (Library ▾ › Reorganize library…), so your "
                                                "own sounds have a place in Sources › User before any slot is cleared.")
             return
-        dlg = getattr(us, cls)(self, self.session, self.db, root)
+        dlg = (us.SendDialog(self, self.session, self.db, root, patches) if cls == "SendDialog"
+               else getattr(us, cls)(self, self.session, self.db, root))
         dlg.exec()
-        if cls == "ClearDialog":
+        if cls in ("ClearDialog", "SendDialog", "SyncDialog"):
             self.open_rebuild(["take5"], quiet=True)       # sounds kept from the user slots join Patches
         self.fill_tree(); self.refresh()
 
@@ -974,6 +991,16 @@ class MainWindow(QMainWindow):
         sounds = [r for r in rows if r["kind"] == "sound"]
         if sounds:
             m.addAction(f"Set type… ({len(sounds)})" if len(sounds) > 1 else "Set type…", self.set_type_selected)
+        t5 = [r for r in sounds if r["synth"] == "take5"]
+        if t5:
+            from ..library import userslots as uslots
+            m.addSeparator()
+            a = m.addAction(f"Send to a Take 5 slot… ({len(t5)})" if len(t5) > 1 else "Send to a Take 5 slot…",
+                            lambda: self.open_send_slot(t5))
+            a.setEnabled(self.session.ready("take5"))
+            m.addAction(f"Add to '{uslots.FOR_CRATE}' (Sync sends it)",
+                        lambda: (self.db.crate_add(uslots.for_crate(self.db), [r["hash"] for r in t5]),
+                                 self.fill_tree_counts_only()))
         rm = m.addMenu("Rate")
         for n in range(5, -1, -1):
             rm.addAction("★" * n if n else "Clear", lambda n=n: self.rate_selected(n))
